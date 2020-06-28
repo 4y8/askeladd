@@ -81,17 +81,44 @@ let rec to_deb e v n =
   | Pi(v', t, b) -> Pi([], to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
   | e -> e
 
+let rec subst e n s =
+  match e with
+    Deb n' when n' = n -> s
+  | App(l, r) -> App(subst l n s, subst r n s)
+  | Lam(_, t, b) -> Lam([], subst t n s, subst t (n + 1) s)
+  | Pi(_, t, b) -> Pi([], subst t n s, subst t (n + 1) s)
+  | e -> e
+
+let rec relocation e i =
+  match e with
+    Pi(_, t, b) -> Pi([], relocation t i, relocation b (i + 1))
+  | Lam(_, t, b) -> Lam([], relocation t i, relocation b (i + 1))
+  | Deb k when k >= i -> Deb(k + 1)
+  | App(l, r) -> App(relocation l i, relocation r i)
+  | e -> e
+
+let relocate_ctx =
+  List.map (fun e -> relocation e 0)
+
 let rec get_type e c =
   match e with
     Deb n -> (List.nth c n)
   | Star -> Star
-  | Lam(_, t, b) -> let bt = get_type b (t :: c) in
+  | Lam(_, t, b) -> let bt = get_type b (relocate_ctx (t :: c)) in
     Pi([], t, bt)
   | Pi(_, t, b) -> let tt = get_type t c in
     if tt = Star
-    then let bt = get_type b (t :: c) in
+    then let bt = get_type b (relocate_ctx (t :: c)) in
       if bt = Star
       then Star
       else raise Not_found
     else raise Not_found
+  | App(l, r) ->
+    begin
+      let rt = get_type r c in
+      match get_type l c with
+        Pi(_, fl, fr) when fr = rt ->
+        subst fr 0 rt
+      | _ -> raise Not_found
+    end
   | _ -> raise Not_found
