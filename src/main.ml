@@ -9,10 +9,12 @@ type token
   | ARR
 
 type expr
-  = Var of char list
-  | Pi  of char list * expr * expr
-  | Lam of char list * expr * expr
-  | App of expr * expr
+  = Var  of char list
+  | Pi   of char list * expr * expr
+  | Lam  of char list * expr * expr
+  | App  of expr * expr
+  | Deb  of int
+  | Star
 
 let rec lexer s pos =
   let is_alpha c =
@@ -68,4 +70,28 @@ let rec parser t =
     in
     let e, tl = parser tl in
     parse_par tl e
-  | _         -> raise Not_found
+  | STAR :: tl -> Star, tl
+  | _ -> raise Not_found
+
+let rec to_deb e v n =
+  match e with
+    Var v' when v = v' -> Deb n
+  | App(l, r) -> App(to_deb l v n, to_deb r v n)
+  | Lam(v', t, b) -> Lam([], to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Pi(v', t, b) -> Pi([], to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | e -> e
+
+let rec get_type e c =
+  match e with
+    Deb n -> (List.nth c n)
+  | Star -> Star
+  | Lam(_, t, b) -> let bt = get_type b (t :: c) in
+    Pi([], t, bt)
+  | Pi(_, t, b) -> let tt = get_type t c in
+    if tt = Star
+    then let bt = get_type b (t :: c) in
+      if bt = Star
+      then Star
+      else raise Not_found
+    else raise Not_found
+  | _ -> raise Not_found
