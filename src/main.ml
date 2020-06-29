@@ -7,6 +7,7 @@ type token
   | COL
   | STAR
   | ARR
+  | EOL
 
 type expr
   = Var  of char list
@@ -15,6 +16,12 @@ type expr
   | App  of expr * expr
   | Deb  of int
   | Star
+
+let rec string_to_char_list s =
+  match s with
+    "" -> []
+  | _  ->
+    (String.get s 0) :: (string_to_char_list (String.sub s 1 (String.length s - 1)))
 
 let rec lexer s pos =
   let is_alpha c =
@@ -39,10 +46,25 @@ let rec lexer s pos =
   | '(' :: tl -> LPAR :: (lexer tl (pos + 1))
   | ')' :: tl -> RPAR :: (lexer tl (pos + 1))
   | '*' :: tl -> STAR :: (lexer tl (pos + 1))
+  | '\n' :: tl -> EOL :: (lexer tl (pos + 1))
   | '-' :: '>' :: tl -> ARR :: (lexer tl (pos + 2))
+  | ' ' :: tl | '\t' :: tl -> (lexer tl (pos + 1))
   | c :: _ -> raise Not_found
 
-let rec parser t =
+let rec parse_til t e d =
+  match t with
+    d' :: tl when d' = d ->
+    begin
+      match e with
+        None -> raise Not_found
+      | Some e -> e, tl
+    end
+  | _ -> let ne, tl = parser t in
+    match e with
+      None -> parse_til tl (Some ne) d
+    | Some e -> parse_til tl (Some (App(e, ne))) d
+
+and parser t =
   match t with
     FUN :: VAR v :: COL :: tl ->
     let ty, tl = parser tl in
@@ -61,15 +83,7 @@ let rec parser t =
     in
     Pi(v, ty, b), tl
   | VAR v :: tl -> Var v, tl
-  | LPAR :: tl ->
-    let rec parse_par t e =
-      match t with
-        RPAR :: tl -> e, tl
-      | _ -> let ne, tl = parser t in
-        parse_par tl (App(e, ne))
-    in
-    let e, tl = parser tl in
-    parse_par tl e
+  | LPAR :: tl -> parse_til tl None RPAR
   | STAR :: tl -> Star, tl
   | _ -> raise Not_found
 
