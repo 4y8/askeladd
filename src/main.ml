@@ -1,7 +1,7 @@
 type token
   = FUN
   | PI
-  | VAR of char list
+  | VAR of string
   | RPAR
   | LPAR
   | COL
@@ -11,19 +11,26 @@ type token
   | EOL
 
 type expr
-  = Var  of char list
-  | Pi   of char list * expr * expr
-  | Lam  of char list * expr * expr
+  = Var  of string
+  | Pi   of string * expr * expr
+  | Lam  of string * expr * expr
   | App  of expr * expr
   | Deb  of int
   | Texp of expr * expr
-  | Star
+  | Univ of int
 
 let rec string_to_char_list s =
   match s with
     "" -> []
   | _  ->
-    (String.get s 0) :: (string_to_char_list (String.sub s 1 (String.length s - 1)))
+    (String.get s 0) ::
+    (string_to_char_list (String.sub s 1 (String.length s - 1)))
+
+let rec char_list_to_string s =
+  match s with
+    [] -> ""
+  | hd :: tl ->
+    (String.make 1 hd) ^ (char_list_to_string tl)
 
 let rec lexer s pos =
   let is_alpha c =
@@ -43,7 +50,7 @@ let rec lexer s pos =
       | _ -> [], s
     in
     let v, tl = parse_var s in
-    (VAR v) :: (lexer tl (pos + (List.length v)))
+    (VAR (char_list_to_string v)) :: (lexer tl (pos + (List.length v)))
   | ':' :: tl -> COL  :: (lexer tl (pos + 1))
   | '(' :: tl -> LPAR :: (lexer tl (pos + 1))
   | ')' :: tl -> RPAR :: (lexer tl (pos + 1))
@@ -86,7 +93,7 @@ and parser t l =
       Pi(v, ty, b), tl
     | VAR v :: tl -> Var v, tl
     | LPAR :: tl -> parse_til tl None RPAR
-    | STAR :: tl -> Star, tl
+    | STAR :: tl -> (Univ 0), tl
     | SARR :: tl ->
       let rec parse_type t =
         let r, tl = parser t None in
@@ -95,7 +102,7 @@ and parser t l =
           begin
             match r with
               Texp(Var v, t) -> Pi(v, t, lt), tl
-            | _ -> Pi([], r, lt), tl
+            | _ -> Pi("", r, lt), tl
           end
           | tl -> r, tl
       in
@@ -104,7 +111,7 @@ and parser t l =
         match l with
           None -> raise Not_found
         | Some (Texp(Var l, t)) -> Pi(l, t, lt), tl
-        | Some l -> Pi([], l, lt), tl
+        | Some l -> Pi("", l, lt), tl
       end
     | COL :: tl -> let r, tl = parser tl None in
       begin
@@ -125,22 +132,22 @@ let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
   | App(l, r) -> App(to_deb l v n, to_deb r v n)
-  | Lam(v', t, b) -> Lam([], to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
-  | Pi(v', t, b) -> Pi([], to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Lam(v', t, b) -> Lam("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Pi(v', t, b) -> Pi("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
   | e -> e
 
 let rec subst e n s =
   match e with
     Deb n' when n' = n -> s
   | App(l, r) -> App(subst l n s, subst r n s)
-  | Lam(_, t, b) -> Lam([], subst t n s, subst b (n + 1) s)
-  | Pi(_, t, b) -> Pi([], subst t n s, subst b (n + 1) s)
+  | Lam(_, t, b) -> Lam("", subst t n s, subst b (n + 1) s)
+  | Pi(_, t, b) -> Pi("", subst t n s, subst b (n + 1) s)
   | e -> e
 
 let rec relocation e i =
   match e with
-    Pi(_, t, b) -> Pi([], relocation t i, relocation b (i + 1))
-  | Lam(_, t, b) -> Lam([], relocation t i, relocation b (i + 1))
+    Pi(_, t, b) -> Pi("", relocation t i, relocation b (i + 1))
+  | Lam(_, t, b) -> Lam("", relocation t i, relocation b (i + 1))
   | Deb k when k >= i -> Deb(k + 1)
   | App(l, r) -> App(relocation l i, relocation r i)
   | e -> e
@@ -148,25 +155,31 @@ let rec relocation e i =
 let relocate_ctx =
   List.map (fun e -> relocation e 0)
 
-let rec get_type e c =
+let is_type e =
+  match e with
+    Univ _ -> true
+  | _      -> false
+
+let rec get_type e c gc =
   match e with
     Deb n -> (List.nth c n)
-  | Star -> Star
-  | Lam(_, t, b) -> let bt = get_type b (relocate_ctx (t :: c)) in
-    Pi([], t, bt)
-  | Pi(_, t, b) -> let tt = get_type t c in
-    if tt = Star
-    then let bt = get_type b (relocate_ctx (t :: c)) in
-      if bt = Star
-      then Star
+  | Lam(_, t, b) -> let bt = get_type b (relocate_ctx (t :: c)) gc in
+    Pi("", t, bt)
+  | Pi(_, t, b) -> let tt = get_type t c gc in
+    if is_type tt
+    then let bt = get_type b (relocate_ctx (t :: c)) gc in
+      if is_type bt
+      then (Univ 0)
       else raise Not_found
     else raise Not_found
   | App(l, r) ->
     begin
-      let rt = get_type r c in
-      match get_type l c with
+      let rt = get_type r c gc in
+      match get_type l c gc with
         Pi(_, fl, fr) when fl = rt ->
-        subst fr 0 rt
+        subst fr 0 r
       | _ -> raise Not_found
     end
+  | Univ n -> (Univ (n + 1))
+  | Texp(_, t) -> t
   | _ -> raise Not_found
