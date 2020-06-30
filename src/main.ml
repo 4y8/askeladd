@@ -6,7 +6,8 @@ type token
   | LPAR
   | COL
   | STAR
-  | ARR
+  | DARR
+  | SARR
   | EOL
 
 type expr
@@ -15,6 +16,7 @@ type expr
   | Lam  of char list * expr * expr
   | App  of expr * expr
   | Deb  of int
+  | Texp of expr * expr
   | Star
 
 let rec string_to_char_list s =
@@ -47,7 +49,8 @@ let rec lexer s pos =
   | ')' :: tl -> RPAR :: (lexer tl (pos + 1))
   | '*' :: tl -> STAR :: (lexer tl (pos + 1))
   | '\n' :: tl -> EOL :: (lexer tl (pos + 1))
-  | '-' :: '>' :: tl -> ARR :: (lexer tl (pos + 2))
+  | '=' :: '>' :: tl -> DARR :: (lexer tl (pos + 2))
+  | '-' :: '>' :: tl -> SARR :: (lexer tl (pos + 2))
   | ' ' :: tl | '\t' :: tl -> (lexer tl (pos + 1))
   | c :: _ -> raise Not_found
 
@@ -59,33 +62,64 @@ let rec parse_til t e d =
         None -> raise Not_found
       | Some e -> e, tl
     end
-  | _ -> let ne, tl = parser t in
-    match e with
-      None -> parse_til tl (Some ne) d
-    | Some e -> parse_til tl (Some (App(e, ne))) d
+  | _ -> let e, tl = parser t e in
+    parse_til tl (Some e) d
 
-and parser t =
-  match t with
-    FUN :: VAR v :: COL :: tl ->
-    let ty, tl = parser tl in
-    let b,  tl =
-      match tl with
-        ARR :: tl -> parser tl
-      | _         -> raise Not_found
-    in
-    Lam(v, ty, b), tl
-  | PI :: VAR v :: COL :: tl ->
-    let ty, tl = parser tl in
-    let b,  tl =
-      match tl with
-        ARR :: tl -> parser tl
-      | _         -> raise Not_found
-    in
-    Pi(v, ty, b), tl
-  | VAR v :: tl -> Var v, tl
-  | LPAR :: tl -> parse_til tl None RPAR
-  | STAR :: tl -> Star, tl
-  | _ -> raise Not_found
+and parser t l =
+  let r, tl =
+    match t with
+      FUN :: VAR v :: COL :: tl ->
+      let ty, tl = parser tl None in
+      let b,  tl =
+        match tl with
+          DARR :: tl -> parser tl None
+        | _         -> raise Not_found
+      in
+      Lam(v, ty, b), tl
+    | PI :: VAR v :: COL :: tl ->
+      let ty, tl = parser tl None in
+      let b,  tl =
+        match tl with
+          DARR :: tl -> parser tl None
+        | _         -> raise Not_found
+      in
+      Pi(v, ty, b), tl
+    | VAR v :: tl -> Var v, tl
+    | LPAR :: tl -> parse_til tl None RPAR
+    | STAR :: tl -> Star, tl
+    | SARR :: tl ->
+      let rec parse_type t =
+        let r, tl = parser t None in
+        match tl with
+          SARR :: tl -> let lt, tl = parse_type tl in
+          begin
+            match r with
+              Texp(Var v, t) -> Pi(v, t, lt), tl
+            | _ -> Pi([], r, lt), tl
+          end
+          | tl -> r, tl
+      in
+      let lt, tl = parse_type tl in
+      begin
+        match l with
+          None -> raise Not_found
+        | Some (Texp(Var l, t)) -> Pi(l, t, lt), tl
+        | Some l -> Pi([], l, lt), tl
+      end
+    | COL :: tl -> let r, tl = parser tl None in
+      begin
+        match l with
+          None -> raise Not_found
+        | Some l -> Texp(l, r), tl
+      end
+    | _ -> raise Not_found
+  in
+  match l with
+    None -> r, tl
+  | Some l when
+      (List.hd t) <> SARR &&
+      (List.hd t) <> COL -> App(l, r), tl
+  | Some _ -> r, tl
 
 let rec to_deb e v n =
   match e with
@@ -99,8 +133,8 @@ let rec subst e n s =
   match e with
     Deb n' when n' = n -> s
   | App(l, r) -> App(subst l n s, subst r n s)
-  | Lam(_, t, b) -> Lam([], subst t n s, subst t (n + 1) s)
-  | Pi(_, t, b) -> Pi([], subst t n s, subst t (n + 1) s)
+  | Lam(_, t, b) -> Lam([], subst t n s, subst b (n + 1) s)
+  | Pi(_, t, b) -> Pi([], subst t n s, subst b (n + 1) s)
   | e -> e
 
 let rec relocation e i =
@@ -131,7 +165,7 @@ let rec get_type e c =
     begin
       let rt = get_type r c in
       match get_type l c with
-        Pi(_, fl, fr) when fr = rt ->
+        Pi(_, fl, fr) when fl = rt ->
         subst fr 0 rt
       | _ -> raise Not_found
     end
