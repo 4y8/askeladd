@@ -9,6 +9,7 @@ type token
   | DARR
   | SARR
   | EOL
+  | EQUAL
 
 type expr
   = Var  of string
@@ -18,6 +19,10 @@ type expr
   | Deb  of int
   | Texp of expr * expr
   | Univ of int
+
+type decl
+  = TDecl of string * expr
+  | FDecl of string * expr
 
 let rec string_to_char_list s =
   match s with
@@ -59,6 +64,7 @@ let rec lexer s pos =
   | '=' :: '>' :: tl -> DARR :: (lexer tl (pos + 2))
   | '-' :: '>' :: tl -> SARR :: (lexer tl (pos + 2))
   | ' ' :: tl | '\t' :: tl -> (lexer tl (pos + 1))
+  | '=' :: tl -> EQUAL :: (lexer tl (pos + 1))
   | c :: _ -> raise Not_found
 
 let rec parse_til t e d =
@@ -83,11 +89,11 @@ and parser t l =
         | _         -> raise Not_found
       in
       Lam(v, ty, b), tl
-    | PI :: VAR v :: COL :: tl ->
-      let ty, tl = parser tl None in
+    | LPAR :: VAR v :: COL :: tl ->
+      let ty, tl = parse_til tl None RPAR in
       let b,  tl =
         match tl with
-          DARR :: tl -> parser tl None
+          SARR :: tl -> parser tl None
         | _         -> raise Not_found
       in
       Pi(v, ty, b), tl
@@ -99,18 +105,13 @@ and parser t l =
         let r, tl = parser t None in
         match tl with
           SARR :: tl -> let lt, tl = parse_type tl in
-          begin
-            match r with
-              Texp(Var v, t) -> Pi(v, t, lt), tl
-            | _ -> Pi("", r, lt), tl
-          end
-          | tl -> r, tl
+          Pi("", r, lt), tl
+        | tl -> r, tl
       in
       let lt, tl = parse_type tl in
       begin
         match l with
           None -> raise Not_found
-        | Some (Texp(Var l, t)) -> Pi(l, t, lt), tl
         | Some l -> Pi("", l, lt), tl
       end
     | COL :: tl -> let r, tl = parser tl None in
@@ -121,12 +122,18 @@ and parser t l =
       end
     | _ -> raise Not_found
   in
-  match l with
-    None -> r, tl
-  | Some l when
-      (List.hd t) <> SARR &&
-      (List.hd t) <> COL -> App(l, r), tl
-  | Some _ -> r, tl
+  let e =
+    match l with
+      None -> r
+    | Some l ->
+      match List.hd t with
+        SARR | COL -> r
+      | _ -> App(l, r)
+  in
+  if List.hd tl = SARR
+  then parser tl (Some e)
+  else e, tl
+
 
 let rec to_deb e v n =
   match e with
@@ -160,6 +167,14 @@ let is_type e =
     Univ _ -> true
   | _      -> false
 
+let top_level t =
+  match t with
+    VAR v :: COL :: tl -> let t, tl = parse_til tl None EOL in
+    TDecl(v, t), tl
+  | VAR v :: EQUAL :: tl -> let t, tl = parse_til tl None EOL in
+    FDecl(v, t), tl
+  | _ -> raise Not_found
+
 let rec get_type e c gc =
   match e with
     Deb n -> (List.nth c n)
@@ -182,4 +197,4 @@ let rec get_type e c gc =
     end
   | Univ n -> (Univ (n + 1))
   | Texp(_, t) -> t
-  | _ -> raise Not_found
+  | Var v -> List.assoc v gc
