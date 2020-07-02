@@ -10,6 +10,8 @@ type token
   | SARR
   | EOL
   | EQUAL
+  | LET
+  | IN
 
 type expr
   = Var  of string
@@ -19,6 +21,7 @@ type expr
   | Deb  of int
   | Texp of expr * expr
   | Univ of int
+  | Let  of string * expr * expr
 
 type decl
   = TDecl of string * expr
@@ -45,7 +48,9 @@ let rec lexer s pos =
   match s with
     [] -> []
   | 'f' :: 'u' :: 'n' :: tl -> FUN :: (lexer tl (pos + 3))
+  | 'l' :: 'e' :: 't' :: tl -> LET :: (lexer tl (pos + 3))
   | 'p' :: 'i' :: tl -> PI :: (lexer tl (pos + 2))
+  | 'i' :: 'n' :: tl -> IN :: (lexer tl (pos + 2))
   | a :: _ when is_alpha a ->
     let rec parse_var s =
       match s with
@@ -70,6 +75,12 @@ let rec lexer s pos =
 let rec parse_til t e d =
   match t with
     d' :: tl when d' = d ->
+    begin
+      match e with
+        None -> raise Not_found
+      | Some e -> e, tl
+    end
+  | RPAR :: tl ->
     begin
       match e with
         None -> raise Not_found
@@ -120,6 +131,10 @@ and parser t l =
           None -> raise Not_found
         | Some l -> Texp(l, r), tl
       end
+    | LET :: VAR v :: EQUAL :: tl ->
+      let e, tl = parse_til tl None IN in
+      let b, tl = parse_til tl None EOL in
+      Let(v, e, b), tl
     | _ -> raise Not_found
   in
   let e =
@@ -141,6 +156,7 @@ let rec to_deb e v n =
   | App(l, r) -> App(to_deb l v n, to_deb r v n)
   | Lam(v', t, b) -> Lam("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
   | Pi(v', t, b) -> Pi("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Let(v', e, b) -> Let(v', to_deb e v n, to_deb e v n)
   | e -> e
 
 let rec subst e n s =
@@ -149,12 +165,14 @@ let rec subst e n s =
   | App(l, r) -> App(subst l n s, subst r n s)
   | Lam(_, t, b) -> Lam("", subst t n s, subst b (n + 1) s)
   | Pi(_, t, b) -> Pi("", subst t n s, subst b (n + 1) s)
+  | Let(v, e, b) -> Let(v, subst e n s, subst b n s)
   | e -> e
 
 let rec relocation e i =
   match e with
     Pi(_, t, b) -> Pi("", relocation t i, relocation b (i + 1))
   | Lam(_, t, b) -> Lam("", relocation t i, relocation b (i + 1))
+  | Let(v, e, b) -> Let(v, relocation e i, relocation b i)
   | Deb k when k >= i -> Deb(k + 1)
   | App(l, r) -> App(relocation l i, relocation r i)
   | e -> e
@@ -206,3 +224,5 @@ let rec get_type e c gc =
   | Univ n -> (Univ (n + 1))
   | Texp(_, t) -> t
   | Var v -> List.assoc v gc
+  | Let(v, e, b) ->
+    get_type b c ((v, get_type e c gc) :: gc)
