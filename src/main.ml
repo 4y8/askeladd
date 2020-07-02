@@ -167,6 +167,11 @@ let is_type e =
     Univ _ -> true
   | _      -> false
 
+let get_univ e =
+  match e with
+    Univ n -> n
+  | _      -> -1
+
 let top_level t =
   match t with
     VAR v :: COL :: tl -> let t, tl = parse_til tl None EOL in
@@ -181,10 +186,13 @@ let rec get_type e c gc =
   | Lam(_, t, b) -> let bt = get_type b (relocate_ctx (t :: c)) gc in
     Pi("", t, bt)
   | Pi(_, t, b) -> let tt = get_type t c gc in
-    if is_type tt
-    then let bt = get_type b (relocate_ctx (t :: c)) gc in
-      if is_type bt
-      then (Univ 0)
+    let tu = get_univ tt in
+    if tu <> -1
+    then
+      let bt = get_type b (relocate_ctx (t :: c)) gc in
+      let bu = get_univ bt in
+      if bu <> -1
+      then (Univ(max tu bu))
       else raise Not_found
     else raise Not_found
   | App(l, r) ->
