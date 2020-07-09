@@ -258,7 +258,7 @@ let rec is_comb e =
   | UnVar "C'"
   | UnVar "B*"
   | UnVar "S'" -> true
-  | UnApp(l, r) -> (is_comb l) & (is_comb r)
+  | UnApp(l, r) -> (is_comb l) && (is_comb r)
   | _ -> false
 
 let opt e =
@@ -284,12 +284,12 @@ let rec no_in_lam e =
   | UnVar _
   | Erased -> true
   | UnLet(_, l, r)
-  | UnApp(l, r) -> (no_in_lam l) & (no_in_lam r)
+  | UnApp(l, r) -> (no_in_lam l) && (no_in_lam r)
   | UnLam _ -> false
 
 let rec abs e =
   match e with
-    UnDeb 1 -> UnVar "I"
+    UnDeb 0 -> UnVar "I"
   | UnApp(l, r) -> opt (UnApp(UnApp(UnVar "S", abs l), abs r))
   | e ->
     let rec dec_deb e =
@@ -304,10 +304,12 @@ let rec abs e =
 
 let rec brack e c =
   match e with
-  (* UnApp(UnApp(UnVar "S", UnVar "K"), _) -> UnApp(UnVar "S", UnVar "K") *)
-    UnApp(l, r) -> UnApp(brack l c, brack r c)
+    UnApp(UnApp(UnVar "S", UnVar "K"), _) -> UnApp(UnVar "S", UnVar "K")
+  | UnApp(UnApp(m, l), UnApp(n, l')) when l = l' && is_comb m && is_comb n ->
+    UnApp(UnApp(UnApp(UnVar "S", m), n), l)
+  | UnApp(l, r) -> UnApp(brack l c, brack r c)
   | UnLam b -> abs (brack b c)
   | UnLet(v, e, b) -> brack b ((v, brack e c) :: c)
-  | UnVar v -> List.assoc v c
+  | UnVar v when not (is_comb e) -> List.assoc v c
   | Erased -> UnVar "I"
   | e -> e
