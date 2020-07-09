@@ -270,15 +270,44 @@ let opt e =
     UnApp(UnApp(UnApp(UnVar "B*", p), q), r)
   | UnApp(UnApp(UnVar "S", UnApp(UnVar "K", p)), q) ->
     UnApp(UnApp(UnVar "B", p), q)
+  | UnApp(UnApp(UnVar "S",  UnApp(UnApp(UnVar "B", p), q)), UnApp(UnVar "K", r)) ->
+    UnApp(UnApp(UnApp(UnVar "C'", p), q), r)
+  | UnApp(UnApp(UnVar "S",  p), UnApp(UnVar "K", q)) ->
+    UnApp(UnApp(UnVar "C", p), q)
+  | UnApp(UnApp(UnVar "S",  UnApp(UnApp(UnVar "B", p), q)), r) ->
+    UnApp(UnApp(UnApp(UnVar "S'", p), q), r)
   | e -> e
+
+let rec no_in_lam e =
+  match e with
+    UnDeb _
+  | UnVar _
+  | Erased -> true
+  | UnLet(_, l, r)
+  | UnApp(l, r) -> (no_in_lam l) & (no_in_lam r)
+  | UnLam _ -> false
 
 let rec abs e =
   match e with
-
+    UnDeb 1 -> UnVar "I"
+  | UnApp(l, r) -> opt (UnApp(UnApp(UnVar "S", abs l), abs r))
+  | e ->
+    let rec dec_deb e =
+      match e with
+        UnDeb n -> UnDeb (n - 1)
+      | UnApp(l, r) -> UnApp(dec_deb l, dec_deb r)
+      | UnLam b -> UnLam(dec_deb b)
+      | UnLet(v, e, b) -> UnLet(v, dec_deb e, dec_deb b)
+      | n -> n
+    in
+    UnApp(UnVar "K", dec_deb e)
 
 let rec brack e c =
   match e with
   (* UnApp(UnApp(UnVar "S", UnVar "K"), _) -> UnApp(UnVar "S", UnVar "K") *)
     UnApp(l, r) -> UnApp(brack l c, brack r c)
-  |
+  | UnLam b -> abs (brack b c)
+  | UnLet(v, e, b) -> brack b ((v, brack e c) :: c)
+  | UnVar v -> List.assoc v c
+  | Erased -> UnVar "I"
   | e -> e
