@@ -244,3 +244,41 @@ let rec erase_type e =
   | Lam(_, _, b) -> UnLam(erase_type b)
   | App(l, r) -> UnApp(erase_type l, erase_type r)
   | Let(v, e, b) -> UnLet(v, erase_type e, erase_type b)
+
+
+let rec is_comb e =
+  match e with
+    UnVar "I"
+  | UnVar "K"
+  | UnVar "S"
+  | UnVar "U"
+  | UnVar "Z"
+  | UnVar "B"
+  | UnVar "C"
+  | UnVar "C'"
+  | UnVar "B*"
+  | UnVar "S'" -> true
+  | UnApp(l, r) -> (is_comb l) & (is_comb r)
+  | _ -> false
+
+let opt e =
+  match e with
+    UnApp(UnApp(UnVar "S", UnApp(UnVar "K", p)), UnApp(UnVar "K", q)) ->
+    UnApp(UnVar "K", UnApp(p, q))
+  | UnApp(UnApp(UnVar "S", UnApp(UnVar "K", p)), UnVar "I") -> p
+  | UnApp(UnApp(UnVar "S", UnApp(UnVar "K", p)), UnApp(UnApp(UnVar "B", q), r)) ->
+    UnApp(UnApp(UnApp(UnVar "B*", p), q), r)
+  | UnApp(UnApp(UnVar "S", UnApp(UnVar "K", p)), q) ->
+    UnApp(UnApp(UnVar "B", p), q)
+  | e -> e
+
+let rec abs e =
+  match e with
+
+
+let rec brack e c =
+  match e with
+  (* UnApp(UnApp(UnVar "S", UnVar "K"), _) -> UnApp(UnVar "S", UnVar "K") *)
+    UnApp(l, r) -> UnApp(brack l c, brack r c)
+  |
+  | e -> e
