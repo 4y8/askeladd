@@ -23,6 +23,14 @@ type expr
   | Univ of int
   | Let  of string * expr * expr
 
+type un_expr
+  = UnVar of string
+  | UnLam of un_expr
+  | UnApp of un_expr * un_expr
+  | UnDeb of int
+  | UnLet of string * un_expr * un_expr
+  | Erased
+
 type decl
   = TDecl of string * expr
   | FDecl of string * expr
@@ -149,7 +157,6 @@ and parser t l =
   then parser tl (Some e)
   else e, tl
 
-
 let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
@@ -226,3 +233,14 @@ let rec get_type e c gc =
   | Var v -> List.assoc v gc
   | Let(v, e, b) ->
     get_type b c ((v, get_type e c gc) :: gc)
+
+let rec erase_type e =
+  match e with
+    Pi _
+  | Texp _
+  | Univ _ -> Erased
+  | Var v -> UnVar v
+  | Deb n -> UnDeb n
+  | Lam(_, _, b) -> UnLam(erase_type b)
+  | App(l, r) -> UnApp(erase_type l, erase_type r)
+  | Let(v, e, b) -> UnLet(v, erase_type e, erase_type b)
