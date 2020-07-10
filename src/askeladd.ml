@@ -313,3 +313,44 @@ let rec brack e c =
   | UnVar v when not (is_comb e) -> List.assoc v c
   | Erased -> UnVar "I"
   | e -> e
+
+let ski_to_n v =
+  match v with
+    "S" -> 0
+  | "K" -> 1
+  | "U" -> 2
+  | "Z" -> 3
+  | "I" -> 4
+  | "B" -> 5
+  | "C" -> 6
+  | "S'" -> 7
+  | "B*" -> 8
+  | "C'" -> 9
+  | _ -> raise Not_found (* Shouldn't happend *)
+
+let rec arr e i =
+  match e with
+    UnVar v -> [ski_to_n v], []
+  | UnApp(UnVar v, UnVar v') -> [ski_to_n v; ski_to_n v'], []
+  | UnApp(e, UnVar v) -> let e, l = arr e (i + 2) in
+    [i; ski_to_n v], e @ l
+  | UnApp(UnVar v, e) -> let e, l = arr e (i + 2) in
+    [ski_to_n v; i], e @ l
+  | UnApp(e, e') -> let e, l = arr e (i + 4) in
+    let e', l' = arr e' (i + 4 + (List.length l)) in
+    [i; i + 2], e @ e' @ l @ l'
+  | _ -> raise Not_found (* Shouldn't happend *)
+
+let comp s =
+  let t = lexer (string_to_char_list s) 0 in
+  let p = fst (parser t None) in
+  let d = to_deb p "" 0 in
+  let un = erase_type d in
+  let ski = brack un [] in
+  let a = arr ski 10 in
+  let f = List.fold_left (fun x y ->  (string_of_int y) ^ " " ^ x) "" (fst a) in
+  let s = List.fold_left (fun x y ->  (string_of_int y) ^ " " ^ x) "" (snd a) in
+  (String.sub f 0 (max (String.length f - 1) 0)) ^ "
+" ^ (String.sub s 0 (max (String.length s - 1) 0))
+
+let _ = print_string(comp (read_line() ^ "\n"))
