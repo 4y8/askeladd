@@ -6,8 +6,7 @@ type expr
   | Lam  of string * expr * expr
   | App  of expr * expr
   | Deb  of int
-  | Texp of expr * expr
-  | Univ of int
+  | Univ
   | Let  of string * expr * expr
 
 type decl
@@ -28,7 +27,7 @@ let rec expr s =
     <*  word "=>"
     <*> expr
   in
-  let univ = sym '*' *> return (Univ 0) in
+  let univ = sym '*' *> return Univ in
   let pi =
     let pi v t b = Pi (v, t, b) in
     pi
@@ -94,41 +93,33 @@ let rec relocation e i =
 let relocate_ctx =
   List.map (fun e -> relocation e 0)
 
-let is_type e =
-  match e with
-    Univ _ -> true
-  | _      -> false
+let rec eval c =
+  function
+    Univ -> Univ
+  | Var v -> List.assoc v c
+  | App (Lam (_, _, b), l) ->
+     let b' = subst b 0 l in
+     eval c b'
+  | App (l, r) ->
+     let l' = eval c l in
+     if l = l' then App (l, r) else eval c (App (l', r))
+  | e -> e
 
-let get_univ e =
-  match e with
-    Univ n -> n
-  | _      -> -1
-
-let rec get_type e c gc =
+let rec infer_type e c g =
+  let check e t c g =
+    let t' = infer_type e c g in
+    if t = t'
+    then ()
+    else failwith "Type error"
+  in
   match e with
     Deb n -> (List.nth c n)
-  | Lam(_, t, b) -> let bt = get_type b (relocate_ctx (t :: c)) gc in
-    Pi("", t, bt)
-  | Pi(_, t, b) -> let tt = get_type t c gc in
-    let tu = get_univ tt in
-    if tu <> -1
-    then
-      let bt = get_type b (relocate_ctx (t :: c)) gc in
-      let bu = get_univ bt in
-      if bu <> -1
-      then (Univ(max tu bu))
-      else raise Not_found
-    else raise Not_found
-  | App(l, r) ->
-    begin
-      let rt = get_type r c gc in
-      match get_type l c gc with
-        Pi (_, fl, fr) when fl = rt ->
-        subst fr 0 r
-      | _ -> raise Not_found
-    end
-  | Univ n -> (Univ (n + 1))
-  | Texp(_, t) -> t
-  | Var v -> List.assoc v gc
-  | Let(v, e, b) ->
-    get_type b c ((v, get_type e c gc) :: gc)
+  | Lam (_, t, b) ->
+     let t' = infer_type b (t :: c) g in
+     Pi ("", t, t')
+  | Univ -> Univ
+  | Pi (_, p, p') ->
+     check p p' c g;
+     let t = eval g p in
+     check p' Univ (t :: c) g;
+     Univ
