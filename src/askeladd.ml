@@ -1,20 +1,5 @@
 open Combo
 
-type token
-  = FUN
-  | PI
-  | VAR of string
-  | RPAR
-  | LPAR
-  | COL
-  | STAR
-  | DARR
-  | SARR
-  | EOL
-  | EQUAL
-  | LET
-  | IN
-
 type expr
   = Var  of string
   | Pi   of string * expr * expr
@@ -31,157 +16,70 @@ type decl
 
 let (%) f g x = f (g x)
 
-let tokens = [
-    "fun", FUN;
-    "let", LET;
-    "in",  IN;
-    "pi",  PI;
-    ":",   COL;
-    "(",   LPAR;
-    ")",   RPAR;
-    "\n",  EOL;
-    "=>",  DARR;
-    "->",  SARR;
-    "=",   EQUAL;
-    "*",   STAR
-  ]
-
-
-let tok (s, t) =
-  word s *> return t
-
-let token =
-  let var v = VAR v in
-  choice (List.map tok tokens) <|> ((var % inplode) <$> (many alpha))
-
-let rec tokens =
-  many token
-
 let rec expr s =
-  let ide = function VAR v :: tl -> Some (v, tl) | _ -> None in
+  let ide = inplode <$> many alpha in
   let lam =
     let lam v t b = Lam (v, t, b) in
     lam
-    <$> sym FUN
+    <$> word "fun"
      *> ide
-    <*  sym COL
+    <*  sym ':'
     <*> expr
-    <*  sym DARR
+    <*  word "=>"
     <*> expr
   in
-  let univ =
-    sym STAR *> return (Univ 0)
-  in 
+  let univ = sym '*' *> return (Univ 0) in
   let pi =
     let pi v t b = Pi (v, t, b) in
     pi
-    <$> sym LPAR
-    *> ide
-    <*  sym COL
+    <$> sym '('
+     *> ide
+    <*  sym ':'
     <*> expr
-    <*  sym RPAR
-    <*  sym SARR
+    <*  sym ')'
+    <*  word "->"
     <*> expr
   in
   let var =
     let var v = Var v in
     var <$> ide
-  in 
-  (univ <|> lam <|> pi <|> var) s
-
-let rec parse_til t e d =
-  match t with
-    d' :: tl when d' = d ->
-    begin
-      match e with
-        None -> raise Not_found
-      | Some e -> e, tl
-    end
-  | RPAR :: tl ->
-    begin
-      match e with
-        None -> raise Not_found
-      | Some e -> e, tl
-    end
-  | _ -> let e, tl = parser t e in
-    parse_til tl (Some e) d
-
-and parser t l =
-  let r, tl =
-    match t with
-      FUN :: VAR v :: COL :: tl ->
-      let ty, tl = parser tl None in
-      let b,  tl =
-        match tl with
-          DARR :: tl -> parser tl None
-        | _         -> raise Not_found
-      in
-      Lam(v, ty, b), tl
-    | LPAR :: VAR v :: COL :: tl ->
-      let ty, tl = parse_til tl None RPAR in
-      let b,  tl =
-        match tl with
-          SARR :: tl -> parser tl None
-        | _         -> raise Not_found
-      in
-      Pi(v, ty, b), tl
-    | VAR v :: tl -> Var v, tl
-    | LPAR :: tl -> parse_til tl None RPAR
-    | STAR :: tl -> (Univ 0), tl
-    | SARR :: tl ->
-      let rec parse_type t =
-        let r, tl = parser t None in
-        match tl with
-          SARR :: tl -> let lt, tl = parse_type tl in
-          Pi("", r, lt), tl
-        | tl -> r, tl
-      in
-      let lt, tl = parse_type tl in
-      begin
-        match l with
-          None -> raise Not_found
-        | Some l -> Pi("", l, lt), tl
-      end
-    | COL :: tl -> let r, tl = parser tl None in
-      begin
-        match l with
-          None -> raise Not_found
-        | Some l -> Texp(l, r), tl
-      end
-    | LET :: VAR v :: EQUAL :: tl ->
-      let e, tl = parse_til tl None IN in
-      let b, tl = parse_til tl None EOL in
-      Let(v, e, b), tl
-    | _ -> raise Not_found
   in
-  let e =
-    match l with
-      None -> r
-    | Some l ->
-      match List.hd t with
-        SARR | COL -> r
-      | _ -> App(l, r)
+  let letin =
+    let letin v e b = Let (v, e, b) in
+    letin
+    <$> word "let"
+     *> ide
+    <*  sym '='
+    <*> expr
+    <*  word "in"
+    <*> expr
   in
-  if List.hd tl = SARR
-  then parser tl (Some e)
-  else e, tl
+  let app =
+    let app l r = App (l, r) in
+    app <$> expr <*> expr
+  in
+  let arr =
+    let arr l r = Pi ("", l, r) in
+    chainl (arr <$ word "->") expr
+  in
+  (univ <|> lam <|> pi <|> var <|> letin <|> app <|> arr) s
 
 let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
-  | App(l, r) -> App(to_deb l v n, to_deb r v n)
-  | Lam(v', t, b) -> Lam("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
-  | Pi(v', t, b) -> Pi("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
-  | Let(v', e, b) -> Let(v', to_deb e v n, to_deb b v n)
+  | App (l, r) -> App (to_deb l v n, to_deb r v n)
+  | Lam (v', t, b) -> Lam ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Pi (v', t, b) -> Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
   | e -> e
 
 let rec subst e n s =
   match e with
     Deb n' when n' = n -> s
-  | App(l, r) -> App(subst l n s, subst r n s)
-  | Lam(_, t, b) -> Lam("", subst t n s, subst b (n + 1) s)
-  | Pi(_, t, b) -> Pi("", subst t n s, subst b (n + 1) s)
-  | Let(v, e, b) -> Let(v, subst e n s, subst b n s)
+  | App (l, r) -> App (subst l n s, subst r n s)
+  | Lam (_, t, b) -> Lam("", subst t n s, subst b (n + 1) s)
+  | Pi (_, t, b) -> Pi("", subst t n s, subst b (n + 1) s)
+  | Let (v, e, b) -> Let(v, subst e n s, subst b n s)
   | e -> e
 
 let rec relocation e i =
@@ -206,14 +104,6 @@ let get_univ e =
     Univ n -> n
   | _      -> -1
 
-let top_level t =
-  match t with
-    VAR v :: COL :: tl -> let t, tl = parse_til tl None EOL in
-    TDecl(v, t), tl
-  | VAR v :: EQUAL :: tl -> let t, tl = parse_til tl None EOL in
-    FDecl(v, t), tl
-  | _ -> raise Not_found
-
 let rec get_type e c gc =
   match e with
     Deb n -> (List.nth c n)
@@ -233,7 +123,7 @@ let rec get_type e c gc =
     begin
       let rt = get_type r c gc in
       match get_type l c gc with
-        Pi(_, fl, fr) when fl = rt ->
+        Pi (_, fl, fr) when fl = rt ->
         subst fr 0 r
       | _ -> raise Not_found
     end
