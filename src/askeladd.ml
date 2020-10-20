@@ -18,38 +18,27 @@ let (%) f g x = f (g x)
 
 let rec expr s =
   let ide = inplode <$> many alpha in
-  let lam =
-    let lam v t b = Lam (v, t, b) in
-    lam
-    <$> (word "fun"
+  let comb s p q r = 
+    s <$> (p
     <*  many1 space)
      *> ide
     <*  spaces
-    <*  sym ':'
+    <*  q
     <*  spaces
     <*> expr
     <*  spaces
-    <*  word "=>"
+    <*  r
     <*  spaces
     <*> expr
+  in
+  let lam =
+    let lam v t b = Lam (v, t, b) in
+    comb lam (word "fun") (sym ':') (word "=>")
   in
   let univ = sym '*' *> return Univ in
   let pi =
     let pi v t b = Pi (v, t, b) in
-    pi
-    <$> (sym '('
-    <*  spaces)
-     *> ide
-    <*  spaces
-    <*  sym ':'
-    <*  spaces
-    <*> expr
-    <*  spaces
-    <*  sym ')'
-    <*  spaces
-    <*  word "->"
-    <*  spaces
-    <*> expr
+    comb pi (sym '(') (sym ':') (sym ')' <* spaces <* word "->")
   in
   let var =
     let var v = Var v in
@@ -57,28 +46,15 @@ let rec expr s =
   in
   let letin =
     let letin v e b = Let (v, e, b) in
-    letin
-    <$> (word "let"
-    <*  many1 space)
-     *> ide
-    <*  spaces
-    <*  sym '='
-    <*  spaces
-    <*> expr
-    <*  spaces
-    <*  word "in"
-    <*  spaces
-    <*> expr
+    comb letin (word "let") (sym '=') (word "in")
   in
   let app =
     let app l r = App (l, r) in
     app <$> expr <*> expr
   in
-  let arr =
-    let arr l r = Pi ("", l, r) in
-    chainl (arr <$ word "->") expr
-  in
-  (univ <|> lam <|> pi <|> var <|> letin <|> app <|> arr) s
+  let arr l r = Pi ("", l, r) in
+  let p = (univ <|> lam <|> pi <|> letin <|> var <|> app) in
+  chainl1 (spaces *> (arr <$ word "->") <* spaces) p s
 
 let rec to_deb e v n =
   match e with
@@ -153,7 +129,7 @@ let rec infer_type e c g =
      | _ -> failwith "Type error"
 
 let _ =
-  let e = expr (explode "* -> *") in
+  let e = expr (explode "let a = * in a") in
   match e with
     None -> failwith "Syntax error"
   | Some (e, _) -> (print_endline % show_expr) e
