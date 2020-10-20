@@ -16,8 +16,10 @@ type decl
 
 let (%) f g x = f (g x)
 
+let ide =
+  inplode <$> many1 letter
+
 let rec expr s =
-  let ide = inplode <$> many1 letter in
   let keyword s = word s <* space in
   let comb s p q r = 
     s
@@ -51,6 +53,17 @@ let rec expr s =
   let app = chainl1 (spaces *> return app <* spaces) p in
   app s
 
+let top_level =
+  let tdecl =
+    let tdecl s e = TDecl (s, e) in
+    tdecl <$> ide <* char ':' <*> expr 
+  in
+  let fdecl =
+    let fdecl s e = FDecl (s, e) in
+    fdecl <$> ide <* char '=' <*> expr 
+  in
+  tdecl <|> fdecl <* char ';'
+
 let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
@@ -60,17 +73,26 @@ let rec to_deb e v n =
   | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
   | e -> e
 
-let rec relocation e i =
+let rec subst e n s =
   match e with
-    Pi (_, t, b) -> Pi ("", relocation t i, relocation b (i + 1))
-  | Lam (_, t, b) -> Lam ("", relocation t i, relocation b (i + 1))
-  | Let (v, e, b) -> Let (v, relocation e i, relocation b i)
+    Deb n' when n' = n -> s
+  | App (l, r) -> App (subst l n s, subst r n s)
+  | Lam (_, t, b) -> Lam ("", subst t n s, subst b (n + 1) s)
+  | Pi (_, t, b) -> Pi ("", subst t n s, subst b (n + 1) s)
+  | Let (v, e, b) -> Let (v, subst e n s, subst b n s)
+  | e -> e
+
+let rec reloc e i =
+  match e with
+    Pi (_, t, b) -> Pi ("", reloc t i, reloc b (i + 1))
+  | Lam (_, t, b) -> Lam ("", reloc t i, reloc b (i + 1))
+  | Let (v, e, b) -> Let (v, reloc e i, reloc b i)
   | Deb k when k >= i -> Deb (k + 1)
-  | App (l, r) -> App (relocation l i, relocation r i)
+  | App (l, r) -> App (reloc l i, reloc r i)
   | e -> e
 
 let relocate_ctx =
-  List.map (fun e -> relocation e 0)
+  List.map (fun e -> reloc e 0)
 
 let rec eval c g =
   function
@@ -80,9 +102,10 @@ let rec eval c g =
        match List.assoc_opt v g with
          None -> Var v
        | Some e -> e
-     end
+     end 
   | App (Lam (_, _, b), l) ->
-     eval (l :: c) g b
+     let b' = subst b 0 l in
+     eval (l :: c) g b'
   | App (l, r) ->
      let l' = eval c g l in
      if l = l' then App (l, r) else eval c g (App (l', r))
@@ -115,7 +138,7 @@ let rec infer_type e c g =
      match t with
        Pi (_, t, t') ->
        check r t c g;
-       t'
+       subst t' 0 r
      | _ -> failwith "Type error"
 
 let _ =
