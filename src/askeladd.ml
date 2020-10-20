@@ -17,10 +17,11 @@ type decl
 let (%) f g x = f (g x)
 
 let rec expr s =
-  let ide = inplode <$> many alpha in
+  let ide = inplode <$> many1 alpha in
+  let keyword s = word s <* space in
   let comb s p q r = 
     s <$> (p
-    <*  many1 space)
+    <*  spaces)
      *> ide
     <*  spaces
     <*  q
@@ -33,7 +34,7 @@ let rec expr s =
   in
   let lam =
     let lam v t b = Lam (v, t, b) in
-    comb lam (word "fun") (sym ':') (word "=>")
+    comb lam (keyword "fun") (sym ':') (word "=>")
   in
   let univ = sym '*' *> return Univ in
   let pi =
@@ -46,15 +47,15 @@ let rec expr s =
   in
   let letin =
     let letin v e b = Let (v, e, b) in
-    comb letin (word "let") (sym '=') (word "in")
+    comb letin (keyword "let") (sym '=') (keyword "in")
   in
-  let app =
-    let app l r = App (l, r) in
-    app <$> expr <*> expr
-  in
+  let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
-  let p = (univ <|> lam <|> pi <|> letin <|> var <|> app) in
-  chainl1 (spaces *> (arr <$ word "->") <* spaces) p s
+  let p = (univ <|> lam <|> pi <|> letin <|> var) in
+  let p = chainl1 (spaces *> (arr <$ word "->") <* spaces) p
+           <|> packs "(" p ")" in
+  let app = chainl1 (spaces *> return app <* spaces) p in
+  app s
 
 let rec to_deb e v n =
   match e with
@@ -108,7 +109,7 @@ let rec infer_type e c g =
   match e with
     Deb n -> (List.nth c n)
   | Lam (_, t, b) ->
-     let t' = infer_type b (t :: c) g in
+     let t' = infer_type b (relocate_ctx (t :: c)) g in
      Pi ("", t, t')
   | Univ -> Univ
   | Pi (_, p, p') ->
@@ -129,7 +130,11 @@ let rec infer_type e c g =
      | _ -> failwith "Type error"
 
 let _ =
-  let e = expr (explode "let a = * in a") in
+  let e = expr (explode "(fun x : * => fun a : x => a) *") in
   match e with
     None -> failwith "Syntax error"
-  | Some (e, _) -> (print_endline % show_expr) e
+  | Some (e, _) -> (print_endline %
+                      show_expr %
+                        (fun x -> infer_type x [] []) %
+                          (fun x -> to_deb x "" 0))
+                     e
