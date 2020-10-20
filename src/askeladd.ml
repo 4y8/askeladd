@@ -17,19 +17,16 @@ type decl
 let (%) f g x = f (g x)
 
 let rec expr s =
-  let ide = inplode <$> many1 alpha in
+  let ide = inplode <$> many1 letter in
   let keyword s = word s <* space in
   let comb s p q r = 
-    s <$> (p
+    s
+    <$> (p
     <*  spaces)
      *> ide
-    <*  spaces
-    <*  q
-    <*  spaces
+    <*  between spaces q spaces
     <*> expr
-    <*  spaces
-    <*  r
-    <*  spaces
+    <*  between spaces r spaces
     <*> expr
   in
   let lam =
@@ -41,10 +38,7 @@ let rec expr s =
     let pi v t b = Pi (v, t, b) in
     comb pi (sym '(') (sym ':') (sym ')' <* spaces <* word "->")
   in
-  let var =
-    let var v = Var v in
-    var <$> ide
-  in
+  let var = (fun v -> Var v) <$> ide in
   let letin =
     let letin v e b = Let (v, e, b) in
     comb letin (keyword "let") (sym '=') (keyword "in")
@@ -66,15 +60,6 @@ let rec to_deb e v n =
   | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
   | e -> e
 
-let rec subst e n s =
-  match e with
-    Deb n' when n' = n -> s
-  | App (l, r) -> App (subst l n s, subst r n s)
-  | Lam (_, t, b) -> Lam ("", subst t n s, subst b (n + 1) s)
-  | Pi (_, t, b) -> Pi ("", subst t n s, subst b (n + 1) s)
-  | Let (v, e, b) -> Let (v, subst e n s, subst b n s)
-  | e -> e
-
 let rec relocation e i =
   match e with
     Pi (_, t, b) -> Pi ("", relocation t i, relocation b (i + 1))
@@ -90,10 +75,14 @@ let relocate_ctx =
 let rec eval c g =
   function
     Univ -> Univ
-  | Var v -> List.assoc v g
+  | Var v ->
+     begin 
+       match List.assoc_opt v g with
+         None -> Var v
+       | Some e -> e
+     end
   | App (Lam (_, _, b), l) ->
-     let b' = subst b 0 l in
-     eval c g b'
+     eval (l :: c) g b
   | App (l, r) ->
      let l' = eval c g l in
      if l = l' then App (l, r) else eval c g (App (l', r))
@@ -130,7 +119,7 @@ let rec infer_type e c g =
      | _ -> failwith "Type error"
 
 let _ =
-  let e = expr (explode "(fun x : * => fun a : x => a) *") in
+  let e = expr (explode (read_line ())) in
   match e with
     None -> failwith "Syntax error"
   | Some (e, _) -> (print_endline %
