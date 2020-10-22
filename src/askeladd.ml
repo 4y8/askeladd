@@ -1,13 +1,14 @@
 open Combo
 
 type expr
-  = Var  of string
-  | Pi   of string * expr * expr
-  | Lam  of string * expr * expr
-  | App  of expr * expr
-  | Deb  of int
+  = Var of string
+  | Pi  of string * expr * expr
+  | Lam of string * expr option * expr
+  | App of expr * expr
+  | Deb of int
+  | Ann of expr * expr
   | Univ
-  | Let  of string * expr * expr
+  | Let of string * expr * expr
 [@@deriving show]
 
 type decl
@@ -21,29 +22,49 @@ let ide =
 
 let rec expr s =
   let keyword s = word s <* space in
-  let comb s p q r = 
+  let comb s p q = 
     s
-    <$> (p
-    <*  spaces)
-     *> ide
+    <$ p
+    <*  spaces
+    <*> ide
+    <*> (opt None ((fun x -> Some x) <$  between spaces (char ':') spaces
+                                     <*> expr))
     <*  between spaces q spaces
-    <*> expr
-    <*  between spaces r spaces
     <*> expr
   in
   let lam =
     let lam v t b = Lam (v, t, b) in
-    comb lam (keyword "fun") (sym ':') (word "=>")
+        lam 
+    <$  keyword "fun"
+    <*  spaces
+    <*> ide
+    <*> (opt None ((fun x -> Some x) <$  between spaces (char ':') spaces
+                                     <*> expr))
+    <*  between spaces (word "=>") spaces
+    <*> expr
   in
   let univ = sym '*' *> return Univ in
   let pi =
     let pi v t b = Pi (v, t, b) in
-    comb pi (sym '(') (sym ':') (sym ')' <* spaces <* word "->")
+        pi
+    <$  sym '('
+    <*  spaces
+    <*> ide
+    <*  between spaces (char ':') spaces
+    <*> expr
+    <*  between spaces (word "=>") spaces
+    <*> expr
   in
   let var = (fun v -> Var v) <$> ide in
   let letin =
     let letin v e b = Let (v, e, b) in
-    comb letin (keyword "let") (sym '=') (keyword "in")
+        letin
+    <$  keyword "let"
+    <*> ide
+    <*  between spaces (char '=') spaces
+    <*> expr
+    <*  between spaces (keyword "in") spaces
+    <*> expr
   in
   let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
