@@ -22,16 +22,6 @@ let ide =
 
 let rec expr s =
   let keyword s = word s <* space in
-  let comb s p q = 
-    s
-    <$ p
-    <*  spaces
-    <*> ide
-    <*> (opt None ((fun x -> Some x) <$  between spaces (char ':') spaces
-                                     <*> expr))
-    <*  between spaces q spaces
-    <*> expr
-  in
   let lam =
     let lam v t b = Lam (v, t, b) in
         lam 
@@ -89,8 +79,12 @@ let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
   | App (l, r) -> App (to_deb l v n, to_deb r v n)
-  | Lam (v', t, b) -> Lam ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
-  | Pi (v', t, b) -> Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | Lam (v', None, b) ->
+     Lam ("", None, to_deb (to_deb b v' 0) v (n + 1))
+  | Lam (v', Some t, b) ->
+     Lam ("", Some (to_deb t v n), to_deb (to_deb b v' 0) v (n + 1))
+  | Pi (v', t, b) ->
+     Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
   | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
   | e -> e
 
@@ -98,7 +92,10 @@ let rec subst e n s =
   match e with
     Deb n' when n' = n -> s
   | App (l, r) -> App (subst l n s, subst r n s)
-  | Lam (_, t, b) -> Lam ("", subst t n s, subst b (n + 1) s)
+  | Lam (_, None, b) ->
+     Lam ("", None, subst b (n + 1) s)
+  | Lam (_, Some t, b) ->
+     Lam ("", Some (subst t n s), subst b (n + 1) s)
   | Pi (_, t, b) -> Pi ("", subst t n s, subst b (n + 1) s)
   | Let (v, e, b) -> Let (v, subst e n s, subst b n s)
   | e -> e
@@ -106,7 +103,9 @@ let rec subst e n s =
 let rec reloc e i =
   match e with
     Pi (_, t, b) -> Pi ("", reloc t i, reloc b (i + 1))
-  | Lam (_, t, b) -> Lam ("", reloc t i, reloc b (i + 1))
+  | Lam (_, None, b) -> Lam ("", None, reloc b (i + 1))
+  | Lam (_, Some t, b) ->
+     Lam ("", Some (reloc t i), reloc b (i + 1))
   | Let (v, e, b) -> Let (v, reloc e i, reloc b i)
   | Deb k when k >= i -> Deb (k + 1)
   | App (l, r) -> App (reloc l i, reloc r i)
@@ -115,7 +114,7 @@ let rec reloc e i =
 let relocate_ctx =
   List.map (fun e -> reloc e 0)
 
-let rec eval c g =
+let rec normalize c g =
   function
     Univ -> Univ
   | Var v ->
@@ -124,31 +123,47 @@ let rec eval c g =
          None -> Var v
        | Some e -> e
      end 
-  | App (Lam (_, _, b), l) ->
-     let b' = subst b 0 l in
-     eval (l :: c) g b'
-  | App (l, r) ->
-     let l' = eval c g l in
-     if l = l' then App (l, r) else eval c g (App (l', r))
+  | App (e, e') ->
+     let e' = normalize c g e' in
+     (match normalize c g e with
+         Lam (_, _, b) -> normalize c g (subst b 0 e')
+       | e -> App (e, e'))
   | e -> e
 
-let rec infer_type e c g =
-  let check e t c g =
-    let t' = infer_type e c g in
-    if t = t'
-    then ()
-    else failwith "Type error"
-  in
+let rec equal c g e e' =
+  let e  = normalize c g e in
+  let e' = normalize c g e' in
+  match e, e' with
+    Deb n, Deb n' -> n = n'
+  | Var v, Var v' -> v = v'
+  | Univ, Univ -> true
+  | Lam (_, Some t, b), Lam (_, Some t', b') ->
+     equal c g t t' && equal c g b b'
+  | Lam (_, None, b), Lam (_, None, b') -> equal c g b b'
+  | Ann (e, t), Ann (e', t') ->
+     equal c g e e' && equal c g t t'
+
+let rec infer_type (e, exp) c g = 
   match e with
     Deb n -> (List.nth c n)
   | Lam (_, t, b) ->
-     let t' = infer_type b (relocate_ctx (t :: c)) g in
-     Pi ("", t, t')
+     (match exp with
+       Some (Pi (_, p, p')) ->
+        let te = infer_type (b, None) (p :: c) g in
+        Pi ("", p, te)
+      | None ->
+         begin
+           match t with
+             Some p ->
+             let te = infer_type (b, None) (p :: c) g in
+             Pi ("", p, te)
+           | None -> failwith "missing type annotation."
+         end
+      | _ -> failwith "bad type for lambda abstraction.")
   | Univ -> Univ
   | Pi (_, p, p') ->
-     check p p' c g;
-     let t = eval c g p in
-     check p' Univ (t :: c) g;
+     infer_universe c g p;
+     infer_universe (p :: c) g p';
      Univ
   | Var v -> List.assoc v g
   | Let (v, t, b) ->
@@ -162,6 +177,18 @@ let rec infer_type e c g =
        subst t' 0 r
      | _ -> failwith "Type error"
 
+and check e t c g =
+    let t' = infer_type (e, None) c g in
+    if t = t'
+    then ()
+    else failwith "Type error"
+
+and infer_universe c g e =
+  let u = infer_type (e, None) c g  in
+  match normalize c g u with
+    Univ -> () 
+  | _ -> failwith "expected type"
+
 let _ =
   let e = expr (explode (read_line ())) in
   match e with
@@ -169,5 +196,5 @@ let _ =
   | Some (e, _) -> (print_endline %
                       show_expr %
                         (fun x -> infer_type x [] []) %
-                          (fun x -> to_deb x "" 0))
+                          (fun x -> to_deb x "" 0, None))
                      e
