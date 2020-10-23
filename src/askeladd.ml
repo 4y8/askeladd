@@ -14,6 +14,7 @@ type expr
 type decl
   = TDecl of string * expr
   | FDecl of string * expr
+[@@deriving show]
 
 let (%) f g x = f (g x)
 
@@ -42,7 +43,8 @@ let rec expr s =
     <*> ide
     <*  between spaces (char ':') spaces
     <*> expr
-    <*  between spaces (word "=>") spaces
+    <*  between spaces (sym ')') spaces
+    <*  between spaces (word "->") spaces
     <*> expr
   in
   let var = (fun v -> Var v) <$> ide in
@@ -59,19 +61,19 @@ let rec expr s =
   let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
   let p = (univ <|> lam <|> pi <|> letin <|> var) in
-  let p = chainl1 (spaces *> (arr <$ word "->") <* spaces) p
-           <|> packs "(" p ")" in
+  let p = chainr1 (spaces *> (arr <$ word "->") <* spaces) (p
+           <|> packs "(" p ")") in
   let app = chainl1 (spaces *> return app <* spaces) p in
   app s
 
 let top_level =
   let tdecl =
     let tdecl s e = TDecl (s, e) in
-    tdecl <$> ide <* char ':' <*> expr
+    tdecl <$> ide <* spaces <* char ':' <* spaces <*> expr
   in
   let fdecl =
     let fdecl s e = FDecl (s, e) in
-    fdecl <$> ide <* char '=' <*> expr
+    fdecl <$> ide <* spaces <* char '=' <* spaces <*> expr
   in
   tdecl <|> fdecl <* char ';'
 
@@ -111,7 +113,7 @@ let rec reloc e i =
   | App (l, r) -> App (reloc l i, reloc r i)
   | e -> e
 
-let relocate_ctx =
+let reloc_ctx =
   List.map (fun e -> reloc e 0)
 
 let rec normalize c g =
@@ -140,7 +142,7 @@ let rec equal c g e e' =
   | Lam (_, Some t, b), Lam (_, Some t', b') ->
      equal c g t t' && equal c g b b'
   | Lam (_, None, b), Lam (_, None, b') -> equal c g b b'
-  | Ann(e, t),Ann(e', t') ->
+  | Ann (e, t), Ann (e', t') ->
      equal c g e e' && equal c g t t'
   | Pi (_, t, p), Pi (_, t', p') ->
      equal c g t t' && equal c g p p'
@@ -161,14 +163,14 @@ let rec infer_type (e, exp) c g =
   | Lam (_, t, b) ->
      (match exp with
        Some (Pi (_, p, p')) ->
-        let te = infer_type (b, None) (p :: c) g in
+        let te = infer_type (b, Some p') (reloc_ctx (p :: c)) g in
         check_equal p' te;
         Pi ("", p, te)
       | None ->
          begin
            match t with
              Some p ->
-             let te = infer_type (b, None) (p :: c) g in
+             let te = infer_type (b, None) (reloc_ctx (p :: c)) g in
              Pi ("", p, te)
            | None -> failwith "missing type annotation."
          end
@@ -200,13 +202,25 @@ and infer_pi e c g =
       Pi (_, p, p') -> p, p'
     | _ -> failwith "Expected a function"
 
+let rec get_type_decl v l =
+  match l with
+    [] -> failwith "Untype declared varible"
+  | TDecl (v', t) :: _ when v = v' -> to_deb t "" 0
+  | _ :: tl -> get_type_decl v tl
+
+let rec program l l' c =
+  match l with
+    [] -> c
+  | FDecl (v, e) :: tl ->
+     let t = get_type_decl v l' in
+     let t = infer_type (to_deb e "" 0, Some t) [] c in
+     Printf.printf "%s: %s\n" v (show_expr t);
+     program tl l' ((v, t) :: c)
+  | _ :: tl -> program tl l' c
 
 let _ =
-  let e = expr (explode (read_line ())) in
-  match e with
+  let p = (many (between spaces top_level spaces)) (explode (read_line ())) in
+  match p with
     None -> failwith "Syntax error"
-  | Some (e, _) -> (print_endline %
-                      show_expr %
-                        (fun x -> infer_type x [] []) %
-                          (fun x -> to_deb x "" 0, None))
-                     e
+  | Some (p, _) ->
+     ignore (program p p [])
