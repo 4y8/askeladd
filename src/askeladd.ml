@@ -6,7 +6,7 @@ type expr
   | Lam of string * expr option * expr
   | App of expr * expr
   | Deb of int
-  | Ann of expr * expr
+  | Ann of expr * expr
   | Univ
   | Let of string * expr * expr
 [@@deriving show]
@@ -24,7 +24,7 @@ let rec expr s =
   let keyword s = word s <* space in
   let lam =
     let lam v t b = Lam (v, t, b) in
-        lam 
+        lam
     <$  keyword "fun"
     <*  spaces
     <*> ide
@@ -67,11 +67,11 @@ let rec expr s =
 let top_level =
   let tdecl =
     let tdecl s e = TDecl (s, e) in
-    tdecl <$> ide <* char ':' <*> expr 
+    tdecl <$> ide <* char ':' <*> expr
   in
   let fdecl =
     let fdecl s e = FDecl (s, e) in
-    fdecl <$> ide <* char '=' <*> expr 
+    fdecl <$> ide <* char '=' <*> expr
   in
   tdecl <|> fdecl <* char ';'
 
@@ -118,11 +118,11 @@ let rec normalize c g =
   function
     Univ -> Univ
   | Var v ->
-     begin 
+     begin
        match List.assoc_opt v g with
          None -> Var v
        | Some e -> e
-     end 
+     end
   | App (e, e') ->
      let e' = normalize c g e' in
      (match normalize c g e with
@@ -140,16 +140,29 @@ let rec equal c g e e' =
   | Lam (_, Some t, b), Lam (_, Some t', b') ->
      equal c g t t' && equal c g b b'
   | Lam (_, None, b), Lam (_, None, b') -> equal c g b b'
-  | Ann (e, t), Ann (e', t') ->
+  | Ann(e, t),Ann(e', t') ->
      equal c g e e' && equal c g t t'
+  | Pi (_, t, p), Pi (_, t', p') ->
+     equal c g t t' && equal c g p p'
+  | _ -> false
 
-let rec infer_type (e, exp) c g = 
+let rec infer_type (e, exp) c g =
+  let check_equal e e' =
+    match equal c g e e' with
+      true -> ()
+    | false -> failwith "Non equal types"
+  in
   match e with
     Deb n -> (List.nth c n)
+  | Ann (e, t) ->
+     let t' = infer_type (e, None) c g in
+     check_equal t t';
+     t
   | Lam (_, t, b) ->
      (match exp with
        Some (Pi (_, p, p')) ->
         let te = infer_type (b, None) (p :: c) g in
+        check_equal p' te;
         Pi ("", p, te)
       | None ->
          begin
@@ -167,27 +180,26 @@ let rec infer_type (e, exp) c g =
      Univ
   | Var v -> List.assoc v g
   | Let (v, t, b) ->
-     let t = infer_type t c g in
-     infer_type b c ((v, t) :: g)
+     let t = infer_type (t, None) c g in
+     infer_type (b, None) c ((v, t) :: g)
   | App (l, r) ->
-     let t = infer_type l c g in
-     match t with
-       Pi (_, t, t') ->
-       check r t c g;
-       subst t' 0 r
-     | _ -> failwith "Type error"
-
-and check e t c g =
-    let t' = infer_type (e, None) c g in
-    if t = t'
-    then ()
-    else failwith "Type error"
+     let p, p' = infer_pi l c g in
+     let tr = infer_type (r, None) c g in
+     check_equal tr p;
+     subst p' 0 r
 
 and infer_universe c g e =
   let u = infer_type (e, None) c g  in
   match normalize c g u with
-    Univ -> () 
+    Univ -> ()
   | _ -> failwith "expected type"
+
+and infer_pi e c g =
+  let t = infer_type (e, None) c g in
+    match normalize c g t with
+      Pi (_, p, p') -> p, p'
+    | _ -> failwith "Expected a function"
+
 
 let _ =
   let e = expr (explode (read_line ())) in
