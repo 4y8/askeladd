@@ -67,13 +67,25 @@ let rec expr s =
   app s
 
 let top_level =
+  let rec wrap_lam l e =
+    match l with
+      [] -> e
+    | hd :: tl -> Lam (hd, None, wrap_lam tl e)
+  in
   let tdecl =
     let tdecl s e = TDecl (s, e) in
     tdecl <$> ide <* spaces <* char ':' <* spaces <*> expr
   in
   let fdecl =
     let fdecl s e = FDecl (s, e) in
-    fdecl <$> ide <* spaces <* char '=' <* spaces <*> expr
+        fdecl
+    <$> ide
+    <*> (wrap_lam
+     <$  spaces
+     <*> (many (between spaces ide spaces))
+     <*  char '='
+     <*  spaces
+     <*> expr)
   in
   tdecl <|> fdecl <* char ';'
 
@@ -214,7 +226,7 @@ let rec program l l' c =
   | FDecl (v, e) :: tl ->
      let t = get_type_decl v l' in
      let t = infer_type (to_deb e "" 0, Some t) [] c in
-     Printf.printf "%s: %s\n" v (show_expr t);
+     Printf.printf "%s : %s\n" v (show_expr t);
      program tl l' ((v, t) :: c)
   | _ :: tl -> program tl l' c
 

@@ -1,0 +1,5 @@
+id : (a : *) -> a -> a;
+id _ x = x;
+
+const : (a : *) -> (b : *) -> a -> b -> a;
+const _ _ x _ = x;
