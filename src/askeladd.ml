@@ -19,7 +19,11 @@ type decl
 let (%) f g x = f (g x)
 
 let ide =
-  inplode <$> many1 letter
+  inplode <$> many1 (letter <|> char '_')
+
+let blank p =
+  let nul = space <|> newline <|> tab in
+  many nul *> p <* many nul
 
 let rec expr s =
   let keyword s = word s <* space in
@@ -27,11 +31,10 @@ let rec expr s =
     let lam v t b = Lam (v, t, b) in
         lam
     <$  keyword "fun"
-    <*  spaces
-    <*> ide
-    <*> (opt None ((fun x -> Some x) <$  between spaces (char ':') spaces
+    <*> blank ide
+    <*> (opt None ((fun x -> Some x) <$  blank (char ':')
                                      <*> expr))
-    <*  between spaces (word "=>") spaces
+    <*  blank (word "=>")
     <*> expr
   in
   let univ = sym '*' *> return Univ in
@@ -39,12 +42,11 @@ let rec expr s =
     let pi v t b = Pi (v, t, b) in
         pi
     <$  sym '('
-    <*  spaces
-    <*> ide
-    <*  between spaces (char ':') spaces
+    <*> blank ide
+    <*  blank (char ':')
     <*> expr
-    <*  between spaces (sym ')') spaces
-    <*  between spaces (word "->") spaces
+    <*  blank (sym ')')
+    <*  blank (word "->")
     <*> expr
   in
   let var = (fun v -> Var v) <$> ide in
@@ -52,17 +54,17 @@ let rec expr s =
     let letin v e b = Let (v, e, b) in
         letin
     <$  keyword "let"
-    <*> ide
-    <*  between spaces (char '=') spaces
-    <*> expr
-    <*  between spaces (keyword "in") spaces
+    <*> blank ide
+    <*  blank (char '=')
+    <*> blank expr
+    <*  blank (keyword "in")
     <*> expr
   in
   let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
   let p = (univ <|> lam <|> pi <|> letin <|> var) in
-  let p = chainr1 (spaces *> (arr <$ word "->") <* spaces) (p
-           <|> packs "(" p ")") in
+  let p = chainr1 (blank (arr <$ word "->")) (p
+           <|> between (blank (word "(")) p (blank (word ")"))) in
   let app = chainl1 (spaces *> return app <* spaces) p in
   app s
 
@@ -74,20 +76,18 @@ let top_level =
   in
   let tdecl =
     let tdecl s e = TDecl (s, e) in
-    tdecl <$> ide <* spaces <* char ':' <* spaces <*> expr
+    tdecl <$> ide <* blank (char ':') <*> expr
   in
   let fdecl =
     let fdecl s e = FDecl (s, e) in
         fdecl
     <$> ide
     <*> (wrap_lam
-     <$  spaces
-     <*> (many (between spaces ide spaces))
-     <*  char '='
-     <*  spaces
+     <$> (many (blank ide))
+     <*  blank (char '=')
      <*> expr)
   in
-  tdecl <|> fdecl <* char ';'
+  tdecl <|> fdecl <* blank (char ';')
 
 let rec to_deb e v n =
   match e with
@@ -231,7 +231,10 @@ let rec program l l' c =
   | _ :: tl -> program tl l' c
 
 let _ =
-  let p = (many (between spaces top_level spaces)) (explode (read_line ())) in
+  let s = Sys.argv.(1) in
+  let ic = open_in s in
+  let s = explode (really_input_string ic (in_channel_length ic)) in
+  let p = (many (blank top_level)) s in
   match p with
     None -> failwith "Syntax error"
   | Some (p, _) ->
