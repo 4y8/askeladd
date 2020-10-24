@@ -21,6 +21,12 @@ let keyword v s =
     Some (v', _) when v' <> v -> None
   | e -> e
 
+let semicolon =
+  blank (char ';')
+
+let colon =
+  blank (char ':')
+
 let rec expr s =
   let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
@@ -74,7 +80,7 @@ and case s =
    <*> expr
    <*  blank (word "->")
    <*> expr
-   <*  blank (char ';')
+   <*  semicolon
   in
   let case e l = Case (e, l) in
        (case
@@ -89,15 +95,15 @@ let data_decl =
             pair
         <$  blank (char '|')
         <*> ide
-        <*  blank (char ':')
+        <*  colon
         <*> expr
-        <*  blank (char ';')
+        <*  semicolon
   in
   let data n t l = Data (n, t, l) in
       data
   <$  keyword "data"
   <*> blank ide
-  <*  blank (char ':')
+  <*  colon
   <*> expr
   <*  blank (keyword "where")
   <*> many1 (blank constructor)
@@ -110,7 +116,7 @@ let top_level =
   in
   let tdecl =
     let tdecl s e = TDecl (s, e) in
-    tdecl <$> ide <* blank (char ':') <*> expr
+    tdecl <$> ide <* colon <*> expr
   in
   let fdecl =
     let fdecl s e = FDecl (s, e) in
@@ -121,4 +127,4 @@ let top_level =
      <*  blank (char '=')
      <*> expr)
   in
-  (tdecl <|> fdecl <* blank (char ';')) <|> data_decl
+  (tdecl <|> fdecl <* semicolon) <|> data_decl
