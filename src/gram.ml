@@ -67,6 +67,22 @@ and univ =
 and var =
   (fun v -> Var v) <$> ide
 
+and case s =
+  let pattern =
+       (fun x y -> x, y)
+   <$  blank (char '|')
+   <*> expr
+   <*  blank (word "->")
+   <*> expr
+   <*  blank (char ';')
+  in
+  let case e l = Case (e, l) in
+       (case
+   <$  keyword "case"
+   <*> blank expr
+   <*  keyword "of"
+   <*> many1 pattern) s
+
 let data_decl =
   let constructor =
     let pair x y = x, y in

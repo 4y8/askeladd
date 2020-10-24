@@ -7,7 +7,7 @@ type expr
   | Ann of expr * expr
   | Univ
   | Let of string * expr * expr
-  | Case of expr * (expr * string list * expr) list
+  | Case of expr * (expr * expr) list
 [@@deriving show]
 
 type decl
