@@ -14,19 +14,28 @@ type expr
 type decl
   = TDecl of string * expr
   | FDecl of string * expr
+  | Data  of string * expr * (string * expr) list
 [@@deriving show]
 
 let (%) f g x = f (g x)
 
-let ide =
-  inplode <$> many1 (letter <|> char '_')
+let keywords = ["fun"; "Set"; "data"; "where"]
+
+let is_keyword v = List.mem v keywords
+
+let ide s =
+  match (inplode <$> many1 (letter <|> char '_')) s with
+    Some (v, _) when is_keyword v -> None
+  | e -> e
+
+let nul = space <|> newline <|> tab
 
 let blank p =
-  let nul = space <|> newline <|> tab in
   many nul *> p <* many nul
 
+let keyword s = word s
+
 let rec expr s =
-  let keyword s = word s <* space in
   let lam =
     let lam v t b = Lam (v, t, b) in
         lam
@@ -37,7 +46,7 @@ let rec expr s =
     <*  blank (word "=>")
     <*> expr
   in
-  let univ = sym '*' *> return Univ in
+  let univ = Univ <$ keyword "Set" in
   let pi =
     let pi v t b = Pi (v, t, b) in
         pi
@@ -68,6 +77,25 @@ let rec expr s =
   let app = chainl1 (spaces *> return app <* spaces) p in
   app s
 
+let data_decl =
+  let constructor =
+    let pair x y = x, y in
+            pair
+        <$  blank (char '|')
+        <*> ide
+        <*  blank (char ':')
+        <*> expr
+        <*  blank (char ';')
+  in
+  let data n t l = Data (n, t, l) in
+      data
+  <$  keyword "data"
+  <*> blank ide
+  <*  blank (char ':')
+  <*> expr
+  <*  blank (keyword "where")
+  <*> many1 (blank constructor)
+
 let top_level =
   let rec wrap_lam l e =
     match l with
@@ -87,7 +115,7 @@ let top_level =
      <*  blank (char '=')
      <*> expr)
   in
-  tdecl <|> fdecl <* blank (char ';')
+  (tdecl <|> fdecl <* blank (char ';')) <|> data_decl
 
 let rec to_deb e v n =
   match e with
@@ -128,7 +156,7 @@ let rec reloc e i =
 let reloc_ctx =
   List.map (fun e -> reloc e 0)
 
-let rec normalize c g =
+let rec whnf c g =
   function
     Univ -> Univ
   | Var v ->
@@ -138,15 +166,15 @@ let rec normalize c g =
        | Some e -> e
      end
   | App (e, e') ->
-     let e' = normalize c g e' in
-     (match normalize c g e with
-         Lam (_, _, b) -> normalize c g (subst b 0 e')
+     let e' = whnf c g e' in
+     (match whnf c g e with
+         Lam (_, _, b) -> whnf c g (subst b 0 e')
        | e -> App (e, e'))
   | e -> e
 
 let rec equal c g e e' =
-  let e  = normalize c g e in
-  let e' = normalize c g e' in
+  let e  = whnf c g e in
+  let e' = whnf c g e' in
   match e, e' with
     Deb n, Deb n' -> n = n'
   | Var v, Var v' -> v = v'
@@ -204,13 +232,13 @@ let rec infer_type (e, exp) c g =
 
 and infer_universe c g e =
   let u = infer_type (e, None) c g  in
-  match normalize c g u with
+  match whnf c g u with
     Univ -> ()
   | _ -> failwith "expected type"
 
 and infer_pi e c g =
   let t = infer_type (e, None) c g in
-    match normalize c g t with
+    match whnf c g t with
       Pi (_, p, p') -> p, p'
     | _ -> failwith "Expected a function"
 
@@ -226,8 +254,10 @@ let rec program l l' c =
   | FDecl (v, e) :: tl ->
      let t = get_type_decl v l' in
      let t = infer_type (to_deb e "" 0, Some t) [] c in
-     Printf.printf "%s : %s\n" v (show_expr t);
      program tl l' ((v, t) :: c)
+  | Data (v, t, l) :: tl ->
+     let c = (v, t) :: l @ c in
+     program tl l' c
   | _ :: tl -> program tl l' c
 
 let _ =
@@ -238,4 +268,5 @@ let _ =
   match p with
     None -> failwith "Syntax error"
   | Some (p, _) ->
-     ignore (program p p [])
+     let c = program p p [] in
+     List.iter (fun (v, t) -> Printf.printf "%s : %s\n" v (show_expr t)) c

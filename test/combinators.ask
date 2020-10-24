@@ -1,1 +1,9 @@
-id : (a : *) -> a -> a;id _ x = x; const : (a : *) -> (b : *) -> a -> b -> a;const _ _ x _ = x;
+id : (A : Set) -> A -> A;
+id _ x = x;
+
+const : (A : Set) -> (B : Set) -> A -> B -> A;
+const _ _ x _ = x;
+
+data Bool : Set where
+| True  : Bool;
+| False : Bool;
