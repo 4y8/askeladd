@@ -7,8 +7,3 @@ const _ _ x _ = x;
 data Bool : Set where
 | True  : Bool;
 | False : Bool;
-
-not e =
-  case e of
-  | True -> False;
-  | False -> True;

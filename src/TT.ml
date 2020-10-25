@@ -3,37 +3,37 @@ open Syntax
 let rec to_deb e v n =
   match e with
     Var v' when v = v' -> Deb n
-  | App (l, r) -> App (to_deb l v n, to_deb r v n)
-  | Lam (v', None, b) ->
-     Lam ("", None, to_deb (to_deb b v' 0) v (n + 1))
-  | Lam (v', Some t, b) ->
-     Lam ("", Some (to_deb t v n), to_deb (to_deb b v' 0) v (n + 1))
-  | Pi (v', t, b) ->
-     Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1))
+  | App (l, r, i) -> App (to_deb l v n, to_deb r v n, i)
+  | Lam (v', None, b, i) ->
+     Lam ("", None, to_deb (to_deb b v' 0) v (n + 1), i)
+  | Lam (v', Some t, b, i) ->
+     Lam ("", Some (to_deb t v n), to_deb (to_deb b v' 0) v (n + 1), i)
+  | Pi (v', t, b, i) ->
+     Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1), i)
   | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
   | e -> e
 
 let rec subst e n s =
   match e with
     Deb n' when n' = n -> s
-  | App (l, r) -> App (subst l n s, subst r n s)
-  | Lam (_, None, b) ->
-     Lam ("", None, subst b (n + 1) s)
-  | Lam (_, Some t, b) ->
-     Lam ("", Some (subst t n s), subst b (n + 1) s)
-  | Pi (_, t, b) -> Pi ("", subst t n s, subst b (n + 1) s)
+  | App (l, r, i) -> App (subst l n s, subst r n s, i)
+  | Lam (_, None, b, i) ->
+     Lam ("", None, subst b (n + 1) s, i)
+  | Lam (_, Some t, b, i) ->
+     Lam ("", Some (subst t n s), subst b (n + 1) s, i)
+  | Pi (_, t, b, i) -> Pi ("", subst t n s, subst b (n + 1) s, i)
   | Let (v, e, b) -> Let (v, subst e n s, subst b n s)
   | e -> e
 
-let rec reloc e i =
+let rec reloc e n =
   match e with
-    Pi (_, t, b) -> Pi ("", reloc t i, reloc b (i + 1))
-  | Lam (_, None, b) -> Lam ("", None, reloc b (i + 1))
-  | Lam (_, Some t, b) ->
-     Lam ("", Some (reloc t i), reloc b (i + 1))
-  | Let (v, e, b) -> Let (v, reloc e i, reloc b i)
-  | Deb k when k >= i -> Deb (k + 1)
-  | App (l, r) -> App (reloc l i, reloc r i)
+    Pi (_, t, b, i) -> Pi ("", reloc t n, reloc b (n + 1), i)
+  | Lam (_, None, b, i) -> Lam ("", None, reloc b (n + 1), i)
+  | Lam (_, Some t, b, i) ->
+     Lam ("", Some (reloc t n), reloc b (n + 1), i)
+  | Let (v, e, b) -> Let (v, reloc e n, reloc b n)
+  | Deb k when k >= n -> Deb (k + 1)
+  | App (l, r, i) -> App (reloc l n, reloc r n, i)
   | e -> e
 
 let reloc_ctx =

@@ -28,8 +28,8 @@ let colon =
   blank (char ':')
 
 let rec expr s =
-  let app l r = App (l, r) in
-  let arr l r = Pi ("", l, r) in
+  let app l r = App (l, r, Expl) in
+  let arr l r = Pi ("", l, r, Expl) in
   let p = (set <|> lam <|> pi <|> letin <|> var) in
   let p = chainr1 (blank (arr <$ word "->")) (p
            <|> between (blank (word "(")) p (blank (word ")"))) in
@@ -47,7 +47,7 @@ and letin s =
   <*> expr) s
 
 and lam s =
-  let lam v t b = Lam (v, t, b) in
+  let lam v t b = Lam (v, t, b, Expl) in
      (lam
   <$  keyword "fun"
   <*> blank ide
@@ -57,7 +57,7 @@ and lam s =
   <*> expr) s
 
 and pi s =
-  let pi v t b = Pi (v, t, b) in
+  let pi v t b = Pi (v, t, b, Expl) in
       (pi
   <$  sym '('
   <*> blank ide
@@ -71,6 +71,9 @@ and set =
   let positive = int_of_string <$> (inplode <$> many1 digit) in
   let set n = Set (n) in
   set <$ keyword "Set" <*> (opt 0 positive)
+
+and hole =
+  Hole <$ (word "???")
 
 and var =
   (fun v -> Var v) <$> ide
@@ -114,7 +117,7 @@ let top_level =
   let rec wrap_lam l e =
     match l with
       [] -> e
-    | hd :: tl -> Lam (hd, None, wrap_lam tl e)
+    | hd :: tl -> Lam (hd, None, wrap_lam tl e, Expl)
   in
   let tdecl =
     let tdecl s e = TDecl (s, e) in
