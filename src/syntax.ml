@@ -5,7 +5,7 @@ type expr
   | App of expr * expr
   | Deb of int
   | Ann of expr * expr
-  | Univ
+  | Set of int
   | Let of string * expr * expr
   | Case of expr * (expr * expr) list
 [@@deriving show]

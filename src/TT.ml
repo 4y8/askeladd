@@ -41,8 +41,7 @@ let reloc_ctx =
 
 let rec whnf c g =
   function
-    Univ -> Univ
-  | Var v ->
+    Var v ->
      begin
        match List.assoc_opt v g with
          None -> Var v
@@ -61,7 +60,7 @@ let rec equal c g e e' =
   match e, e' with
     Deb n, Deb n' -> n = n'
   | Var v, Var v' -> v = v'
-  | Univ, Univ -> true
+  | Set n, Set m -> n = m
   | Lam (_, Some t, b), Lam (_, Some t', b') ->
      equal c g t t' && equal c g b b'
   | Lam (_, None, b), Lam (_, None, b') -> equal c g b b'
@@ -98,11 +97,11 @@ let rec infer_type (e, exp) c g =
            | None -> failwith "missing type annotation."
          end
       | _ -> failwith "bad type for lambda abstraction.")
-  | Univ -> Univ
+  | Set n -> Set (n + 1)
   | Pi (_, p, p') ->
-     infer_universe c g p;
-     infer_universe (p :: c) g p';
-     Univ
+     let m = infer_set c g p in
+     let n = infer_set (p :: c) g p' in
+     Set (max m n)
   | Var v -> List.assoc v g
   | Let (v, t, b) ->
      let t = infer_type (t, None) c g in
@@ -114,10 +113,10 @@ let rec infer_type (e, exp) c g =
      subst p' 0 r
   | _ -> raise Not_found (* TODO *)
 
-and infer_universe c g e =
+and infer_set c g e =
   let u = infer_type (e, None) c g  in
   match whnf c g u with
-    Univ -> ()
+    Set n -> n
   | _ -> failwith "expected type"
 
 and infer_pi e c g =

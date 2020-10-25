@@ -30,7 +30,7 @@ let colon =
 let rec expr s =
   let app l r = App (l, r) in
   let arr l r = Pi ("", l, r) in
-  let p = (univ <|> lam <|> pi <|> letin <|> var) in
+  let p = (set <|> lam <|> pi <|> letin <|> var) in
   let p = chainr1 (blank (arr <$ word "->")) (p
            <|> between (blank (word "(")) p (blank (word ")"))) in
   let app = chainl1 (spaces *> return app <* spaces) p in
@@ -67,8 +67,10 @@ and pi s =
   <*  blank (word "->")
   <*> expr) s
 
-and univ =
-  Univ <$ keyword "Set"
+and set =
+  let positive = int_of_string <$> (inplode <$> many1 digit) in
+  let set n = Set (n) in
+  set <$ keyword "Set" <*> (opt 0 positive)
 
 and var =
   (fun v -> Var v) <$> ide
