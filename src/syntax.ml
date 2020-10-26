@@ -22,3 +22,30 @@ type decl
   | FDecl of string * expr
   | Data  of string * expr * (string * expr) list
 [@@deriving show]
+
+(******************************************************************************)
+
+type twin
+  = Only
+  | TwinL
+  | TwinR
+
+type elim
+  = A of expr
+  | Hd
+  | Tl
+
+type head
+  = V of string * twin
+  | M of string
+
+type param
+  = P of expr
+  | TwinT of expr * expr
+
+type equation
+  = Eq of (expr * expr) * (expr * expr)
+
+type problem
+  = Unify of equation
+  | All of param * (string * problem)

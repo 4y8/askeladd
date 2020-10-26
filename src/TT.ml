@@ -47,11 +47,11 @@ let rec whnf c g =
          None -> Var v
        | Some e -> e
      end
-  | App (e, e') ->
+  | App (e, e', icit) ->
      let e' = whnf c g e' in
      (match whnf c g e with
-         Lam (_, _, b) -> whnf c g (subst b 0 e')
-       | e -> App (e, e'))
+         Lam (_, _, b, _) -> whnf c g (subst b 0 e')
+       | e -> App (e, e', icit))
   | e -> e
 
 let rec equal c g e e' =
