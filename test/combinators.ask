@@ -3,7 +3,3 @@ id _ x = x;
 
 const : (A : Set) -> (B : Set) -> A -> B -> A;
 const _ _ x _ = x;
-
-data Bool : Set where
-| True  : Bool;
-| False : Bool;

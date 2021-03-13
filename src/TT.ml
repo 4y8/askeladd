@@ -1,126 +1,36 @@
-open Syntax
+open Gram
 
-let rec to_deb e v n =
+let update env v value =
+  (v, value) :: env
+
+let rec app u v =
+  match u with
+    VClo (env, (Abs (x, e))) -> eval (update env x v) e
+  | _ -> VApp (u, v)
+
+and eval env e =
   match e with
-    Var v' when v = v' -> Deb n
-  | App (l, r, i) -> App (to_deb l v n, to_deb r v n, i)
-  | Lam (v', None, b, i) ->
-     Lam ("", None, to_deb (to_deb b v' 0) v (n + 1), i)
-  | Lam (v', Some t, b, i) ->
-     Lam ("", Some (to_deb t v n), to_deb (to_deb b v' 0) v (n + 1), i)
-  | Pi (v', t, b, i) ->
-     Pi ("", to_deb t v n, to_deb (to_deb b v' 0) v (n + 1), i)
-  | Let (v', e, b) -> Let (v', to_deb e v n, to_deb b v n)
-  | e -> e
+    Var x -> List.assoc x env
+  | App (e, e') -> app (eval env e) (eval env e')
+  | Let (x, e, _, e') -> eval (update env x (eval env e)) e'
+  | Set -> VSet
+  | _ -> VClo (env, e)
 
-let rec subst e n s =
-  match e with
-    Deb n' when n' = n -> s
-  | App (l, r, i) -> App (subst l n s, subst r n s, i)
-  | Lam (_, None, b, i) ->
-     Lam ("", None, subst b (n + 1) s, i)
-  | Lam (_, Some t, b, i) ->
-     Lam ("", Some (subst t n s), subst b (n + 1) s, i)
-  | Pi (_, t, b, i) -> Pi ("", subst t n s, subst b (n + 1) s, i)
-  | Let (v, e, b) -> Let (v, subst e n s, subst b n s)
-  | e -> e
+let rec whnf =
+  function VApp (u, v) -> app (whnf u) (whnf v)
+         | VClo (env, e) -> eval env e
+         | v -> v
 
-let rec reloc e n =
-  match e with
-    Pi (_, t, b, i) -> Pi ("", reloc t n, reloc b (n + 1), i)
-  | Lam (_, None, b, i) -> Lam ("", None, reloc b (n + 1), i)
-  | Lam (_, Some t, b, i) ->
-     Lam ("", Some (reloc t n), reloc b (n + 1), i)
-  | Let (v, e, b) -> Let (v, reloc e n, reloc b n)
-  | Deb k when k >= n -> Deb (k + 1)
-  | App (l, r, i) -> App (reloc l n, reloc r n, i)
-  | e -> e
-
-let reloc_ctx =
-  List.map (fun e -> reloc e 0)
-
-let rec whnf c g =
-  function
-    Var v ->
-     begin
-       match List.assoc_opt v g with
-         None -> Var v
-       | Some e -> e
-     end
-  | App (e, e', icit) ->
-     let e' = whnf c g e' in
-     (match whnf c g e with
-         Lam (_, _, b, _) -> whnf c g (subst b 0 e')
-       | e -> App (e, e', icit))
-  | e -> e
-
-let rec equal c g e e' =
-  let e  = whnf c g e in
-  let e' = whnf c g e' in
-  match e, e' with
-    Deb n, Deb n' -> n = n'
-  | Var v, Var v' -> v = v'
-  | Set n, Set m -> n = m
-  | Lam (_, Some t, b), Lam (_, Some t', b') ->
-     equal c g t t' && equal c g b b'
-  | Lam (_, None, b), Lam (_, None, b') -> equal c g b b'
-  | Ann (e, t), Ann (e', t') ->
-     equal c g e e' && equal c g t t'
-  | Pi (_, t, p), Pi (_, t', p') ->
-     equal c g t t' && equal c g p p'
+let rec eqVal (n, u, v) =
+  match (whnf u, whnf v) with
+    VSet, VSet -> true
+  | VGen k, VGen k' -> k = k'
+  | VApp (u, v), VApp (u', v') -> eqVal (n, u, u') && eqVal (n, v, v')
+  | VClo (env, Abs (x, e)), VClo (env', Abs (x', e')) ->
+     let v = VGen (n + 1) in
+     eqVal (n + 1, VClo ((update env x v), e), VClo ((update env' x' v), e'))
+  | VClo (env, Pi (x, e, t)), VClo (env', Pi (x', e', t')) ->
+     let v = VGen (n + 1) in
+     eqVal (n, VClo (env, e), VClo (env', e')) &&
+       eqVal (n + 1, VClo ((update env x v), t), VClo ((update env' x' v), t'))
   | _ -> false
-
-let rec infer_type (e, exp) c g =
-  let check_equal e e' =
-    match equal c g e e' with
-      true -> ()
-    | false -> failwith "Non equal types"
-  in
-  match e with
-    Deb n -> (List.nth c n)
-  | Ann (e, t) ->
-     let t' = infer_type (e, None) c g in
-     check_equal t t';
-     t
-  | Lam (_, t, b) ->
-     (match exp with
-       Some (Pi (_, p, p')) ->
-        let te = infer_type (b, Some p') (reloc_ctx (p :: c)) g in
-        check_equal p' te;
-        Pi ("", p, te)
-      | None ->
-         begin
-           match t with
-             Some p ->
-             let te = infer_type (b, None) (reloc_ctx (p :: c)) g in
-             Pi ("", p, te)
-           | None -> failwith "missing type annotation."
-         end
-      | _ -> failwith "bad type for lambda abstraction.")
-  | Set n -> Set (n + 1)
-  | Pi (_, p, p') ->
-     let m = infer_set c g p in
-     let n = infer_set (p :: c) g p' in
-     Set (max m n)
-  | Var v -> List.assoc v g
-  | Let (v, t, b) ->
-     let t = infer_type (t, None) c g in
-     infer_type (b, None) c ((v, t) :: g)
-  | App (l, r) ->
-     let p, p' = infer_pi l c g in
-     let tr = infer_type (r, None) c g in
-     check_equal tr p;
-     subst p' 0 r
-  | _ -> raise Not_found (* TODO *)
-
-and infer_set c g e =
-  let u = infer_type (e, None) c g  in
-  match whnf c g u with
-    Set n -> n
-  | _ -> failwith "expected type"
-
-and infer_pi e c g =
-  let t = infer_type (e, None) c g in
-    match whnf c g t with
-      Pi (_, p, p') -> p, p'
-    | _ -> failwith "Expected a function"
