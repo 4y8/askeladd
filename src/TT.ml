@@ -34,3 +34,51 @@ let rec eqVal (n, u, v) =
      eqVal (n, VClo (env, e), VClo (env', e')) &&
        eqVal (n + 1, VClo ((update env x v), t), VClo ((update env' x' v), t'))
   | _ -> false
+
+let rec checkExpr (k, rho, gamma) e v =
+  match e with
+    Abs (x, e) ->
+     begin
+       match whnf v with
+         VClo (env, Pi (y, a, b)) ->
+          let v = VGen k in
+          checkExpr (k + 1, update rho x v, update gamma x (VClo (env, a))) e
+            (VClo (update env y v, b))
+       | _ -> failwith "expected Pi"
+     end
+  | Pi (x, a, b) ->
+     begin
+       match whnf v with
+         VSet -> checkSet (k, rho, gamma) a &&
+                   checkSet (k + 1,
+                             update rho x (VGen k),
+                             update gamma x (VClo (rho, a)))
+                     b
+       | _ -> failwith "expected Set"
+     end
+  | Let (x, e, t, e') ->
+     checkSet (k, rho, gamma) t &&
+       checkExpr (k,
+                  update rho x (eval rho e),
+                  update gamma x (eval rho t))
+         e' v
+  | _ ->
+     eqVal (k, inferExpr (k, rho, gamma) e, v)
+
+and checkSet (k, rho, gamma) e =
+  checkExpr (k, rho, gamma) e VSet
+
+and inferExpr (k, rho, gamma) e =
+  match e with
+    Var x -> List.assoc x gamma
+  | App (e, e') ->
+     begin
+       match whnf (inferExpr (k, rho, gamma) e) with
+         VClo (env, Pi (x, a, b)) ->
+          if checkExpr (k, rho, gamma) e' (VClo (env, a))
+          then VClo (update env x (VClo (rho, e')), b)
+          else failwith "application error"
+       | _ -> failwith "expected Pi"
+     end
+  | Set -> VSet
+  | _ -> failwith "Can't infer type"
