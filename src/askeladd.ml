@@ -1,3 +1,2 @@
-open TT
-
-let _ = print_newline ()
+open Syntax
+open Evaluation
