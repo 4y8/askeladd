@@ -21,13 +21,26 @@ let invert gamma sp =
   let dom, ren = go sp in
   PRen (dom, gamma, ren)
 
+let dom (PRen (dom, _, _)) = dom
+let cod (PRen (_, cod, _)) = cod
+let ren (PRen (_, _, ren)) = ren
+
 let rename m pren v =
   let rec goSp pren t = function
       [] -> t
     | (u, i) :: sp -> App (goSp pren t sp, go pren u, i)
   and go pren t =
     match force t with
-      V
+      VFlex (m', sp) ->
+       if m = m'
+       then raise Unify_error
+       else goSp pren (Meta m') sp
+    | VRigid (x, sp) ->
+       goSp pren (Var (lvl2ix (dom pren) (List.assoc x (ren pren)))) sp
+    | VLam (x, i, t) ->
+       Lam (x, i, go (lift pren) (t $$ (VRigid (cod pren, []))))
+    | VPi (x, i, a, b) ->
+       Pi (x, i, go pren a, go (lift pren) (b $$ (VRigid (cod pren, []))))
     | VSet -> Set
   in
   go pren v
@@ -39,6 +52,13 @@ let lams =
     | hd :: tl -> Lam ("x" ^ (string_of_int x), hd, lams (x + 1) tl t)
   in
   lams 0
+
+let solve gamma m sp rhs =
+  let pren = invert gamma sp in
+  let rhs = rename m pren rhs in
+  let sol = eval [] (lams (List.rev (List.map snd sp)) rhs) in
+  let MetaVar m = m in
+  Metacontext.(metaContext := (m, Solved sol) :: !metaContext)
 
 let rec unify l t t' =
   match (force t, force t') with
@@ -54,6 +74,8 @@ let rec unify l t t' =
   | VRigid (x, sp), VRigid (x', sp') when x = x' -> unifySp l sp sp'
   | VFlex (m, sp), VFlex (m', sp') when m = m' -> unifySp l sp sp'
   | VSet, VSet -> ()
+  | VFlex (m, sp), t
+  | t, VFlex (m, sp) -> solve l m sp t
   | _ -> raise Unify_error
 
 and unifySp l sp sp' =

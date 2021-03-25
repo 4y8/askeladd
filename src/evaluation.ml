@@ -47,3 +47,6 @@ let rec force v =
        | Unsolved  -> v
      end
   | v -> v
+
+let lvl2ix l l' =
+  l - l' - 1

@@ -36,3 +36,7 @@ and value
   | VLam   of string * icit * closure
   | VPi    of string * icit * value * closure
   | VSet
+
+type context = {
+    lvl: int; bds: vstate list
+  }
