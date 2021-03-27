@@ -50,3 +50,16 @@ let rec force v =
 
 let lvl2ix l l' =
   l - l' - 1
+
+let rec quote l t =
+  match force t with
+    VFlex (m, sp) -> quoteSp l (Meta m) sp
+  | VRigid (x, sp) -> quoteSp l (Var (lvl2ix l x)) sp
+  | VLam (x, i, t) -> Lam (x, i, quote (l + 1) (t $$ (VRigid (l, []))))
+  | VPi (x, i, a, b) ->
+     Pi (x, i, quote l a, quote (l + 1) (b $$ (VRigid (l, []))))
+  | VSet -> Set
+
+and quoteSp l t = function
+    [] -> t
+  | (u, i) :: sp -> App (quoteSp l t sp, quote l u, i)

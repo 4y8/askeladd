@@ -1,6 +1,7 @@
 open Evaluation
 open Unify
 open Syntax
+open Ctx
 
 let freshMeta ctx =
   Metacontext.(
@@ -45,4 +46,52 @@ let rec check ctx e t =
      t
 
 and infer ctx = function
-    RSet -> Set, VSet
+    RVar x ->
+     let rec go ix = function
+         (x', orig, t) :: types ->
+          if x = x' && orig = Source
+          then Var ix, t
+          else go (ix + 1) types
+       | [] -> raise Not_found
+     in
+     go 0 ctx.types
+  | RLam (x, i, t) ->
+     let a = eval ctx.env (freshMeta ctx) in
+     let (t, b) = insert ctx (infer (bind ctx x a) t) in
+     Lam (x, i, t), VPi (x, i, a, closeVal ctx b)
+  | RApp (t, u, i) ->
+     let t, tty =
+       match i with
+         Imp -> infer ctx t
+       | Exp -> insert' ctx (infer ctx t)
+     in
+     let a, b =
+       match force tty with
+         VPi (_, i', a, b) ->
+          if i <> i'
+          then raise Unify_error
+          else (a, b)
+       | tty ->
+          let a = eval ctx.env (freshMeta ctx) in
+          let b = Closure (ctx.env, freshMeta (bind ctx "x" a)) in
+          unify ctx.lvl tty (VPi ("x", i, a, b));
+          a, b
+     in
+     let u = check ctx u a in
+     App (t, u, i), b $$ (eval ctx.env u)
+  | RPi (x, i, a, b) ->
+     let a = check ctx a VSet in
+     let b = check (bind ctx x (eval ctx.env a)) b VSet in
+     Pi (x, i, a , b), VSet
+  | RSet -> Set, VSet
+  | RHole ->
+     let a = eval ctx.env (freshMeta ctx) in
+     let t = freshMeta ctx in
+     t, a
+  | RLet (x, a, t, u) ->
+     let a = check ctx a VSet in
+     let va = eval ctx.env a in
+     let t = check ctx t va in
+     let vt = eval ctx.env t in
+     let u, b = infer (define ctx x vt va) u in
+     Let (x, a, t, u), b
