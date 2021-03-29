@@ -17,7 +17,7 @@ let bind {lvl; bds; types; env} name t =
 let newBinder {lvl; bds; types; env} name t =
   { env = (VRigid (lvl, []) :: env);
     lvl = lvl + 1;
-    bds =Bound :: bds;
+    bds = Bound :: bds;
     types = (name, Inserted, t) :: types
   }
 
@@ -30,3 +30,5 @@ let define {lvl; bds; types; env} name v t =
 
 let closeVal ctx t =
   Closure (ctx.env, Evaluation.quote (ctx.lvl + 1) t)
+
+let emptyCtx = {env = []; lvl = 0; bds = []; types = [] }

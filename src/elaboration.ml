@@ -42,6 +42,7 @@ let rec check ctx e t =
   | RHole, _ -> freshMeta ctx
   | t, exp ->
      let t, inf = insert ctx (infer ctx t) in
+     print_endline (show_value inf);
      unify ctx.lvl exp inf;
      t
 
