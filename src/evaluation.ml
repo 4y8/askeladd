@@ -63,3 +63,19 @@ let rec quote l t =
 and quoteSp l t = function
     [] -> t
   | (u, i) :: sp -> App (quoteSp l t sp, quote l u, i)
+
+let rec rmmeta = function
+    Set -> Set
+  | Var n -> Var n
+  | InsertedMeta (m, _)
+  | Meta m ->
+     begin
+       match Metacontext.lookupMeta m with
+         Unsolved -> Meta m
+       | Solved v -> quote 0 v
+     end
+  | App (e, e', i) -> App (rmmeta e, rmmeta e', i)
+  | Let (v, e, t, e') ->
+     Let (v, rmmeta e, rmmeta t, rmmeta e')
+  | Lam (v, i, e) -> Lam (v, i, rmmeta e)
+  | Pi (v, i, a, b) -> Pi (v, i, rmmeta a, rmmeta b)

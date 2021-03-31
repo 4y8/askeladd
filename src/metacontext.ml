@@ -3,6 +3,7 @@ open Syntax
 type meta_entry
   = Solved of value
   | Unsolved
+[@@deriving show]
 
 let nextMeta = ref 0
 

@@ -25,12 +25,12 @@ type metavar = MetaVar of int
 [@@deriving show]
 
 type term
-  = Var  of int
-  | Lam  of string * icit * term
-  | App  of term * term * icit
+  = Var of int
+  | Lam of string * icit * term
+  | App of term * term * icit
   | Set
-  | Pi   of string * icit * term * term
-  | Let  of string * term * term * term
+  | Pi of string * icit * term * term
+  | Let of string * term * term * term
   | Meta of metavar
   | InsertedMeta of metavar * (vstate list)
 [@@deriving show]

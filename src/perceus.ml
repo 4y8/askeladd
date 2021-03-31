@@ -1,3 +1,5 @@
+exception Perceus_error
+
 type expr
   = Lam of string * expr
   | Var of string
@@ -7,15 +9,11 @@ type expr
   | Drop of string list * expr
   | Clo of string * string list * expr
 
-type value
-  = VLam of string * expr
-  | VVar of string
-
 let inter =
   let rec aux acc l = function
       [] -> acc
     | hd :: tl when List.mem hd l -> aux (hd :: acc) l tl
-    | _ :: tl -> aux acc l tl 
+    | _ :: tl -> aux acc l tl
   in aux []
 
 let rec sub =
@@ -32,11 +30,10 @@ let fv =
     | Var _ -> []
     | App (e, e') -> (aux env e) @ (aux env e')
     | Let (v, e, e') -> (aux env e) @ (aux (v :: env) e')
-    | Clo (v, _, e) 
+    | Clo (v, _, e)
     | Lam (v, e) -> aux (v :: env) e
     | Drop (_, e)
     | Dup (_, e) -> aux env e
-    
   in aux []
 
 let rec perceus delta gamma = function
@@ -55,3 +52,14 @@ let rec perceus delta gamma = function
      let ys = fv le in
      let e = perceus [] ys e in
      Dup (sub ys gamma, Clo (v, ys, Drop ([v], e)))
+  | Let (v, e, e') when List.mem v (fv e') ->
+     let gamma' = inter gamma (sub (fv e') [v]) in
+     let e = perceus (delta @ gamma') (sub gamma gamma') e in
+     let e' = perceus delta (v :: gamma') e' in
+     Let (v, e, e')
+  | Let (v, e, e') ->
+     let gamma' = inter gamma (fv e') in
+     let e = perceus (delta @ gamma') (sub gamma gamma') e in
+     let e' = perceus delta gamma' e' in
+     Let (v, e, Drop ([v], e'))
+  | _ -> raise Perceus_error
