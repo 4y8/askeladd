@@ -2,3 +2,4 @@
 src/_build/*
 _build/*
 *.merlin
+*.#*

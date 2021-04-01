@@ -16,11 +16,6 @@ type raw
   | RLet of string * raw * raw * raw
 [@@deriving show]
 
-type vstate
-  = Bound
-  | Defined
-[@@deriving show]
-
 type metavar = MetaVar of int
 [@@deriving show]
 
@@ -32,15 +27,14 @@ type term
   | Pi of string * icit * term * term
   | Let of string * term * term * term
   | Meta of metavar
-  | InsertedMeta of metavar * (vstate list)
-[@@deriving show]
-
-type spine = (value * icit) list
-[@@deriving show]
-and env = value list
-[@@deriving show]
-and closure = Closure of env * term
-[@@deriving show]
+  | InsertedMeta of metavar * env
+and spine = (value * icit) list
+and env_val = Bound of value | Defined of value
+and env = {
+    vals: env_val list;
+    types: (string * origin * value) list
+  }
+and closure = Closure of (value list) * term
 and value
   = VFlex  of metavar * spine
   | VRigid of int * spine

@@ -8,7 +8,7 @@ let freshMeta ctx =
     let m = !nextMeta in
     nextMeta := m + 1;
     metaContext := (m, Unsolved) :: !metaContext;
-    InsertedMeta (MetaVar m, ctx.bds)
+    InsertedMeta (MetaVar m, ctx.env)
   )
 
 let insert' ctx =
@@ -16,7 +16,7 @@ let insert' ctx =
     match force va with
       VPi (_, Imp, _, b) ->
        let m = freshMeta ctx in
-       let mv = eval (ctx.env) m in
+       let mv = eval (vals ctx) m in
        go (App (t, m, Imp), b $$ mv)
     | va -> t, va
   in
@@ -34,9 +34,9 @@ let rec check ctx e t =
      Lam (x, Imp, check (newBinder ctx x a) t (b $$ (VRigid (ctx.lvl, []))))
   | RLet (x, a, t, u), a' ->
      let a = check ctx a VSet in
-     let va = eval ctx.env a in
+     let va = eval (vals ctx) a in
      let t = check ctx t va in
-     let vt = eval ctx.env t in
+     let vt = eval (vals ctx) t in
      let u = check (define ctx x vt va) u a' in
      Let (x, a, t, u)
   | RHole, _ -> freshMeta ctx
@@ -54,9 +54,9 @@ and infer ctx = function
           else go (ix + 1) types
        | [] -> raise Not_found
      in
-     go 0 ctx.types
+     go 0 ctx.env.types
   | RLam (x, i, t) ->
-     let a = eval ctx.env (freshMeta ctx) in
+     let a = eval (vals ctx) (freshMeta ctx) in
      let (t, b) = insert ctx (infer (bind ctx x a) t) in
      Lam (x, i, t), VPi (x, i, a, closeVal ctx b)
   | RApp (t, u, i) ->
@@ -72,26 +72,26 @@ and infer ctx = function
           then raise Unify_error
           else (a, b)
        | tty ->
-          let a = eval ctx.env (freshMeta ctx) in
-          let b = Closure (ctx.env, freshMeta (bind ctx "x" a)) in
+          let a = eval (vals ctx) (freshMeta ctx) in
+          let b = Closure (vals ctx, freshMeta (bind ctx "x" a)) in
           unify ctx.lvl tty (VPi ("x", i, a, b));
           a, b
      in
      let u = check ctx u a in
-     App (t, u, i), b $$ (eval ctx.env u)
+     App (t, u, i), b $$ (eval (vals ctx) u)
   | RPi (x, i, a, b) ->
      let a = check ctx a VSet in
-     let b = check (bind ctx x (eval ctx.env a)) b VSet in
+     let b = check (bind ctx x (eval (vals ctx) a)) b VSet in
      Pi (x, i, a , b), VSet
   | RSet -> Set, VSet
   | RHole ->
-     let a = eval ctx.env (freshMeta ctx) in
+     let a = eval (vals ctx) (freshMeta ctx) in
      let t = freshMeta ctx in
      t, a
   | RLet (x, a, t, u) ->
      let a = check ctx a VSet in
-     let va = eval ctx.env a in
+     let va = eval (vals ctx) a in
      let t = check ctx t va in
-     let vt = eval ctx.env t in
+     let vt = eval (vals ctx) t in
      let u, b = infer (define ctx x vt va) u in
      Let (x, a, t, u), b

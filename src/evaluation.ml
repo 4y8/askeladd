@@ -11,7 +11,7 @@ let rec eval env = function
   | Let (_, _, t, u) -> eval ((eval env t) :: env) u
   | Set -> VSet
   | Meta m -> vMeta m
-  | InsertedMeta (m, bds) -> vAppBDs env (vMeta m) bds
+  | InsertedMeta (m, env) -> vAppMEnv env.vals (vMeta m)
 
 and vApp t u i =
   match t with
@@ -24,12 +24,11 @@ and vAppSp t = function
     [] -> t
   | (u, i) :: sp -> vApp (vAppSp t sp) u i
 
-and vAppBDs env v bds =
-  match (env, bds) with
-    ([], []) -> v
-  | (t :: env, Bound :: bds) -> vApp (vAppBDs env v bds) t Exp
-  | (_ :: env, Defined :: bds) -> vAppBDs env v bds
-  | _ -> raise Impossible
+and vAppMEnv env v =
+  match env with
+    [] -> v
+  | Bound t :: env -> vApp (vAppMEnv env v) t Exp
+  | Defined _ :: env -> vAppMEnv env v
 
 and vMeta m =
   match lookupMeta m with
