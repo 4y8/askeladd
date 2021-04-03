@@ -5,23 +5,23 @@ type context = {
     env: env;
   }
 
-let bind {lvl; env = {vals; types}} name t =
+let bind {lvl; env = {vals; types}} name t a =
   { lvl = lvl + 1;
-    env = { vals = Bound (VRigid (lvl, [])) :: vals;
+    env = { vals = Bound (VRigid (lvl, []), a) :: vals;
             types = (name, Source, t) :: types
           }
   }
 
-let newBinder {lvl; env = {vals; types}} name t =
+let newBinder {lvl; env = {vals; types}} name t a =
   { lvl = lvl + 1;
-    env = { vals = Bound (VRigid (lvl, [])) :: vals;
+    env = { vals = Bound (VRigid (lvl, []), a) :: vals;
             types = (name, Inserted, t) :: types
           }
   }
 
-let define {lvl; env = {vals; types}} name v t =
+let define {lvl; env = {vals; types}} name v t a =
   { lvl = lvl + 1;
-    env = { vals = Defined v :: vals;
+    env = { vals = Defined (v, a) :: vals;
             types = (name, Source, t) :: types
           }
   }
@@ -29,7 +29,7 @@ let define {lvl; env = {vals; types}} name v t =
 let vals ctx =
   let rec aux acc = function
       [] -> List.rev acc
-    | Defined v :: tl | Bound v :: tl -> aux (v :: acc) tl 
+    | Defined (v, _) :: tl | Bound (v, _) :: tl -> aux (v :: acc) tl 
   in aux [] ctx.env.vals
 
 let closeVal ctx t =

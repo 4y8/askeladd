@@ -11,7 +11,7 @@ let lift (PRen (dom, cod, ren)) =
 let invert gamma sp =
   let rec go = function
       [] -> (0, [])
-    | (t, _) :: sp ->
+    | (t, _, _) :: sp ->
        let dom, ren = go sp in
        match force t with
          VRigid (x, []) when List.mem_assoc x ren ->
@@ -26,48 +26,49 @@ let cod (PRen (_, cod, _)) = cod
 let ren (PRen (_, _, ren)) = ren
 
 let rename m pren v =
-  let rec goSp pren t = function
+  let rec auxSp pren t = function
       [] -> t
-    | (u, i) :: sp -> App (goSp pren t sp, go pren u, i)
-  and go pren t =
+    | (u, i, a) :: sp -> App (auxSp pren t sp, aux pren u, i, a)
+  and aux pren t =
     match force t with
       VFlex (m', sp) ->
        if m = m'
        then raise Unify_error
-       else goSp pren (Meta m') sp
+       else auxSp pren (Meta m') sp
     | VRigid (x, sp) ->
-       goSp pren (Var (lvl2ix (dom pren) (List.assoc x (ren pren)))) sp
-    | VLam (x, i, t) ->
-       Lam (x, i, go (lift pren) (t $$ (VRigid (cod pren, []))))
+       auxSp pren (Var (lvl2ix (dom pren) (List.assoc x (ren pren)))) sp
+    | VLam (x, i, t, a) ->
+       Lam (x, i, aux (lift pren) (t $$ (VRigid (cod pren, []))), a)
     | VPi (x, i, a, b) ->
-       Pi (x, i, go pren a, go (lift pren) (b $$ (VRigid (cod pren, []))))
+       Pi (x, i, aux pren a, aux (lift pren) (b $$ (VRigid (cod pren, []))))
     | VSet -> Set
   in
-  go pren v
+  aux pren v
 
 let lams =
   let rec lams x l t =
     match l with
       [] -> t
-    | hd :: tl -> Lam ("x" ^ (string_of_int x), hd, lams (x + 1) tl t)
+    | (i, a) :: tl -> Lam ("x" ^ (string_of_int x), i, lams (x + 1) tl t, a)
   in
   lams 0
 
 let solve gamma m sp rhs =
   let pren = invert gamma sp in
   let rhs = rename m pren rhs in
-  let sol = eval [] (lams (List.rev (List.map snd sp)) rhs) in
+  let nd = List.map (fun (_, y, z) -> y, z) sp in
+  let sol = eval [] (lams (List.rev nd) rhs) in
   let MetaVar m = m in
   Metacontext.(metaContext := (m, Solved sol) :: !metaContext)
 
 let rec unify l t t' =
   match (force t, force t') with
-    VLam (_, _, t), VLam (_, _, t') ->
+    VLam (_, _, t, a), VLam (_, _, t', a') when a = a' ->
      unify (l + 1) (t $$ VRigid (l, [])) (t' $$ VRigid (l, []))
-  | t, VLam (_, i, t') ->
-     unify (l + 1) (vApp t (VRigid (l, [])) i) (t' $$ (VRigid (l, [])))
-  | VLam (_, i, t), t' ->
-     unify (l + 1) (t $$ (VRigid (l, []))) (vApp t' (VRigid (l, [])) i)
+  | t, VLam (_, i, t', a) ->
+     unify (l + 1) (vApp t (VRigid (l, [])) i a) (t' $$ (VRigid (l, [])))
+  | VLam (_, i, t, a), t' ->
+     unify (l + 1) (t $$ (VRigid (l, []))) (vApp t' (VRigid (l, [])) i a)
   | VPi (_, i, a, b), VPi (_, i', a', b') when i = i' ->
      unify l a a';
      unify (l + 1) (b $$ (VRigid (l, []))) (b' $$ (VRigid (l, [])))
@@ -81,5 +82,5 @@ let rec unify l t t' =
 and unifySp l sp sp' =
   match sp, sp' with
     [], [] -> ()
-  | (t, _) :: sp, (t', _) :: sp' -> unifySp l sp sp'; unify l t t'
+  | (t, _, _) :: sp, (t', _, _) :: sp' -> unifySp l sp sp'; unify l t t'
   | _ -> raise Unify_error
