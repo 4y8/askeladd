@@ -8,6 +8,8 @@ type expr
   | Dup of string list * expr
   | Drop of string list * expr
   | Clo of string * string list * expr
+  | Erased
+[@@deriving show]
 
 let inter =
   let rec aux acc l = function
@@ -16,7 +18,7 @@ let inter =
     | _ :: tl -> aux acc l tl
   in aux []
 
-let rec sub =
+let sub =
   let rec aux acc l l' =
     match l with
       [] -> acc
@@ -27,14 +29,20 @@ let rec sub =
 let fv =
   let rec aux env = function
       Var v when List.mem v env -> []
-    | Var _ -> []
+    | Var v -> [v]
     | App (e, e') -> (aux env e) @ (aux env e')
     | Let (v, e, e') -> (aux env e) @ (aux (v :: env) e')
     | Clo (v, _, e)
     | Lam (v, e) -> aux (v :: env) e
     | Drop (_, e)
     | Dup (_, e) -> aux env e
+    | Erased -> []
   in aux []
+
+let opt_dub v e =
+  match v with
+    [] -> e
+  | _ -> Dup (v, e)
 
 let rec perceus delta gamma = function
     Var v when gamma = [v] -> Var v
@@ -47,11 +55,11 @@ let rec perceus delta gamma = function
   | Lam (v, e) as le when List.mem v (fv e) ->
      let ys = fv le in
      let e = perceus [] (v :: ys) e in
-     Dup (sub ys gamma, Clo (v, ys, e))
+     opt_dub (sub ys gamma) (Clo (v, ys, e))
   | Lam (v, e) as le ->
      let ys = fv le in
      let e = perceus [] ys e in
-     Dup (sub ys gamma, Clo (v, ys, Drop ([v], e)))
+     opt_dub (sub ys gamma) (Clo (v, ys, Drop ([v], e)))
   | Let (v, e, e') when List.mem v (fv e') ->
      let gamma' = inter gamma (sub (fv e') [v]) in
      let e = perceus (delta @ gamma') (sub gamma gamma') e in
@@ -62,4 +70,5 @@ let rec perceus delta gamma = function
      let e = perceus (delta @ gamma') (sub gamma gamma') e in
      let e' = perceus delta gamma' e' in
      Let (v, e, Drop ([v], e'))
+  | Erased -> Erased
   | _ -> raise Perceus_error

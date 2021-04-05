@@ -6,9 +6,6 @@ type icit
 type origin = Inserted | Source
 [@@deriving show]
 
-type atype = Term | Type | Unknown
-[@@deriving show]
-
 type raw
   = RHole
   | RSet
@@ -24,15 +21,16 @@ type metavar = MetaVar of int
 
 type term
   = Var of int
-  | Lam of string * icit * term * atype
-  | App of term * term * icit * atype
+  | GVar of string
+  | Lam of string * icit * term
+  | App of term * term * icit
   | Set
   | Pi of string * icit * term * term
   | Let of string * term * term * term
   | Meta of metavar
   | InsertedMeta of metavar * env
-and spine = (value * icit * atype) list
-and env_val = Bound of value * atype | Defined of value * atype
+and spine = (value * icit) list
+and env_val = Bound of value | Defined of value
 and env = {
     vals: env_val list;
     types: (string * origin * value) list
@@ -41,7 +39,8 @@ and closure = Closure of (value list) * term
 and value
   = VFlex  of metavar * spine
   | VRigid of int * spine
-  | VLam   of string * icit * closure * atype
-  | VPi    of string * icit * value * closure
+  | VGlob of string * spine
+  | VLam of string * icit * closure
+  | VPi of string * icit * value * closure
   | VSet
 [@@deriving show]
